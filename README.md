@@ -6,6 +6,10 @@ Claude Code mods, shipped as plugins. Requires Claude Code **2.1.287** or later.
 
 One line above the prompt that shows how full your context window and your plan's usage limits are, and what today's usage would cost at API prices.
 
+[![token-bar promo: the band's rings filling, turning yellow and red, and dropping back after /compact](docs/token-bar-promo.gif)](docs/token-bar-promo.mp4)
+
+▶ [Watch the 30-second promo with sound](docs/token-bar-promo.mp4) (1080p MP4)
+
 ![token-bar in the Claude desktop app, above the prompt](docs/token-bar.png)
 
 ```
@@ -63,7 +67,7 @@ claude plugin test ./token-bar
 
 ## 中文说明
 
-token-bar 在 Claude Code 输入框上方显示一行用量：
+token-bar 在 Claude Code 输入框上方显示一行用量（[30 秒宣传片](docs/token-bar-promo.mp4)）：
 
 - **context**：当前对话的上下文窗口已用多少
 - **session**：5 小时额度已用多少，以及多久后重置
