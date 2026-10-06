@@ -169,6 +169,8 @@ describe('token-bar', () => {
     const wide = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 95 } } as any)
     expect(await wide.find({ type: 'Text', text: /\$147$/ })).toBeDefined()
     expect(await wide.find({ type: 'Text', text: '•' })).toBeUndefined()
+    // A rule stands between groups.
+    expect(await wide.find({ type: 'Text', text: '│' })).toBeDefined()
     await wide.unmount()
 
     // A main turn rescans; a subagent's turn does not.

@@ -3,46 +3,47 @@
 
 // A mid-tone that reads on the desktop's light card and on its dark one.
 const TRACK = 'rgba(128,128,128,0.28)'
-const RIM = 'rgba(128,128,128,0.5)'
 const QUIET = 'rgba(128,128,128,0.55)'
 
-// The context window as a container that fills from the bottom as it is used.
-export function tank(used: number, color: string) {
-  const h = used > 0 ? Math.max(share(used) * 12, 1.5) : 0
-  return svg(
-    18,
-    18,
-    `<rect x="1" y="1" width="16" height="16" rx="4" fill="none" stroke="${RIM}" stroke-width="1.6"/>` +
-      `<rect x="3" y="${(15 - h).toFixed(1)}" width="12" height="${h.toFixed(1)}" rx="2" fill="${color}"/>`,
-  )
-}
-
-// A ring that fills clockwise from twelve as the quota is used.
+// A ring that fills clockwise from twelve as the share is used.
 export function ring(used: number, color: string) {
-  const r = 6
+  const r = 7
   const c = 2 * Math.PI * r
   return svg(
-    16,
-    16,
-    `<circle cx="8" cy="8" r="${r}" fill="none" stroke="${TRACK}" stroke-width="2.5"/>` +
-      `<circle cx="8" cy="8" r="${r}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" ` +
-      `stroke-dasharray="${(share(used) * c).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 8 8)"/>`,
+    18,
+    18,
+    `<circle cx="9" cy="9" r="${r}" fill="none" stroke="${TRACK}" stroke-width="3"/>` +
+      (used > 0
+        ? `<circle cx="9" cy="9" r="${r}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" ` +
+          `stroke-dasharray="${Math.max(share(used) * c, 0.1).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 9 9)"/>`
+        : ''),
   )
 }
 
-// Seven day cells, filled as far as the week's quota is used.
+// The week as a ring of seven arcs, one a day, filled clockwise as the quota is used.
 export function week(used: number, color: string) {
   const filled = share(used) * 7
-  let cells = ''
+  const span = 360 / 7
+  const gap = 9
+  let body = ''
   for (let i = 0; i < 7; i++) {
-    const x = i * 7
+    const from = i * span + gap / 2
+    const to = (i + 1) * span - gap / 2
+    body += `<path d="${arc(from, to)}" fill="none" stroke="${TRACK}" stroke-width="3"/>`
     const part = Math.min(Math.max(filled - i, 0), 1)
-    cells += `<rect x="${x}" width="5" height="10" rx="1.5" fill="${TRACK}"/>`
-    // A sliver under 3px reads as a glitch, so a started day shows at least that.
-    const h = part > 0 ? Math.max(10 * part, 3) : 0
-    if (h > 0) cells += `<rect x="${x}" y="${(10 - h).toFixed(1)}" width="5" height="${h.toFixed(1)}" rx="1.5" fill="${color}"/>`
+    // A started day shows at least a quarter of its arc, so a sliver does not read as a glitch.
+    if (part > 0) body += `<path d="${arc(from, from + (to - from) * Math.max(part, 0.25))}" fill="none" stroke="${color}" stroke-width="3"/>`
   }
-  return svg(47, 10, cells)
+  return svg(18, 18, body)
+}
+
+// An arc of the ring, clockwise from twelve, between two angles in degrees.
+function arc(from: number, to: number) {
+  const at = (deg: number) => {
+    const rad = ((deg - 90) * Math.PI) / 180
+    return `${(9 + 7 * Math.cos(rad)).toFixed(2)} ${(9 + 7 * Math.sin(rad)).toFixed(2)}`
+  }
+  return `M ${at(from)} A 7 7 0 0 1 ${at(to)}`
 }
 
 // The context after each of the last turns, as bars; the newest in the level's color.

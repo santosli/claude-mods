@@ -3,7 +3,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { TokenBarLimit, TokenBarReading, TokenBarToday } from '../types'
-import { bars, barsWidth, ring, tank, week } from './draw'
+import { bars, barsWidth, ring, week } from './draw'
 import { SCAN_SCRIPT, SCAN_STATE, scanRoots } from './scan'
 
 const HISTORY = 12
@@ -16,6 +16,8 @@ const LEVELS: readonly { upTo: number; color: string; hex: string }[] = [
   { upTo: 80, color: 'yellow', hex: '#d99a00' },
   { upTo: Infinity, color: 'red', hex: '#e5484d' },
 ]
+// The rule between two groups on the desktop.
+const RULE = 'rgba(128,128,128,0.45)'
 // The turns chart and last-turn delta: off for now; the history is still kept.
 const SHOW_TURNS = false
 
@@ -85,7 +87,7 @@ export const register: Register = on => {
           cells: fit(2, `${last.percent}%`, 'of context'),
           draw: () => (
             <Box key="context" flexDirection="row" alignItems="center" gap={1}>
-              <Svg source={tank(last.percent, lv.hex)} alt={`${last.percent}% of context used`} width={18} height={18} />
+              <Svg source={ring(last.percent, lv.hex)} alt={`${last.percent}% of context used`} width={18} height={18} />
               <Text color={lv.hex} bold>{`${last.percent}%`}</Text>
               <Text dimColor>of context</Text>
             </Box>
@@ -101,7 +103,7 @@ export const register: Register = on => {
           cells: fit(2, `${qUsed}%`, 'of session', fiveHour.resetsAt ? `↻ ${countdown(fiveHour.resetsAt, at)}` : ''),
           draw: () => (
             <Box key="five-hour" flexDirection="row" alignItems="center" gap={1}>
-              <Svg source={ring(qUsed, q.hex)} alt={`${qUsed}% of session used`} width={16} height={16} />
+              <Svg source={ring(qUsed, q.hex)} alt={`${qUsed}% of session used`} width={18} height={18} />
               <Text color={q.hex} bold>{`${qUsed}%`}</Text>
               <Text dimColor>of session</Text>
               {fiveHour.resetsAt && <Text dimColor>{`↻ ${countdown(fiveHour.resetsAt, at)}`}</Text>}
@@ -115,10 +117,10 @@ export const register: Register = on => {
         groups.push({
           key: 'seven-day',
           color: q.hex,
-          cells: fit(4, `${qUsed}%`, 'of weekly'),
+          cells: fit(2, `${qUsed}%`, 'of weekly'),
           draw: () => (
             <Box key="seven-day" flexDirection="row" alignItems="center" gap={1}>
-              <Svg source={week(qUsed, q.hex)} alt={`${qUsed}% of weekly used`} width={47} height={10} />
+              <Svg source={week(qUsed, q.hex)} alt={`${qUsed}% of weekly used`} width={18} height={18} />
               <Text color={q.hex} bold>{`${qUsed}%`}</Text>
               <Text dimColor>of weekly</Text>
             </Box>
@@ -152,12 +154,16 @@ export const register: Register = on => {
         })
       }
       let room = columns - 2
+      // Groups sit a rule apart: a column of space, the rule, and a column again; three in all.
       const shown = groups.filter((g, i) => (room -= g.cells + (i > 0 ? 3 : 0)) >= 0 || i === 0)
       const hidden = groups.slice(shown.length)
 
       return (
-        <Box flexDirection="row" alignItems="center" paddingX={1} gap={3}>
-          {shown.map(g => g.draw())}
+        <Box flexDirection="row" alignItems="center" paddingX={1} gap={1}>
+          {shown.flatMap((g, i) => [
+            ...(i > 0 ? [<Text key={`rule-${g.key}`} color={RULE}>│</Text>] : []),
+            g.draw(),
+          ])}
           {hidden.length > 0 && (
             <Box key="hidden" flexDirection="row" gap={1}>
               {hidden.map(g => (

@@ -1,6 +1,6 @@
 {
   "name": "token-bar",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "How full the context window and the quota are, and what today cost, above the prompt.",
   "author": {
     "name": "santos"

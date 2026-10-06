@@ -9,7 +9,7 @@ One line above the prompt that shows how full your context window and your plan'
 ![token-bar in the Claude desktop app, above the prompt](docs/token-bar.png)
 
 ```
-▣ 36% of context   ◔ 12% of session ↻ 2h 46m   ▮▯▯▯▯▯▯ 8% of weekly   $42.17 today · 118M tokens
+◔ 36% of context │ ◔ 12% of session ↻ 2h 46m │ ◌ 8% of weekly │ $42.17 today · 118M tokens
 ```
 
 - **Context**: how much of the current conversation's context window is used.
@@ -18,7 +18,7 @@ One line above the prompt that shows how full your context window and your plan'
 - **Today**: tokens used today across all your Claude Code sessions, and what they would cost at API prices (see below).
 - Each one is colored like a phone battery: **green** under 60%, **yellow** under 80%, **red** from 80%.
 - It updates after every turn and after `/compact` or `/clear`; the quota, countdown and today's total refresh every 30 seconds.
-- The desktop app draws icons (a filling container, a ring, seven day cells); the terminal draws text.
+- The desktop app draws rings (context and session fill clockwise; weekly is split into seven arcs, one a day) with a rule between groups; the terminal draws text.
 - When the band is too narrow, groups are hidden from the right and leave a colored `•` behind.
 
 Session and weekly only appear on a Claude subscription, once the first reply of the session has arrived. With an API key there are no usage limits to show, so only the context is drawn.
