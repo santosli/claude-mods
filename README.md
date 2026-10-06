@@ -65,7 +65,7 @@ claude plugin test ./token-bar
 
 ## 中文说明
 
-token-bar 在 Claude Code 输入框上方显示一行用量（[30 秒宣传片](docs/token-bar-promo.mp4)）：
+token-bar 在 Claude Code 输入框上方显示一行用量（[30 秒宣传片](https://github.com/user-attachments/assets/d3748a88-43b6-4c02-a343-623e2c3aecdd)）：
 
 - **context**：当前对话的上下文窗口已用多少
 - **session**：5 小时额度已用多少，以及多久后重置
