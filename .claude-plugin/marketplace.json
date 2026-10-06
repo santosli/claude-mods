@@ -1,0 +1,5 @@
+{
+  "name": "santos-mods",
+  "owner": { "name": "santos" },
+  "plugins": [{ "name": "token-bar", "source": "./token-bar" }]
+}
