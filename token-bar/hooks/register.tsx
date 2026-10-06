@@ -2,8 +2,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { TokenBarLimit, TokenBarReading } from '../types'
+import type { TokenBarLimit, TokenBarReading, TokenBarToday } from '../types'
 import { bars, barsWidth, ring, tank, week } from './draw'
+import { SCAN_SCRIPT, SCAN_STATE, scanRoots } from './scan'
 
 const HISTORY = 12
 const TICK_MS = 30_000
@@ -23,11 +24,13 @@ const readings = atom({ plugin: 'token-bar', key: 'readings' } as const, [] as T
 const limits = atom({ plugin: 'token-bar', key: 'limits' } as const, [] as TokenBarLimit[])
 // The clock the countdown is drawn against; ticked so the band redraws.
 const now = atom({ plugin: 'token-bar', key: 'now' } as const, 0)
+const today = atom({ plugin: 'token-bar', key: 'today' } as const, null as TokenBarToday | null)
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     await takeReading($)
+    await scanToday($)
     // Quota moves between turns too, and the countdown runs down: refresh both.
     $.clock.every(TICK_MS, () => refresh($))
     return result
@@ -38,7 +41,23 @@ export const register: Register = on => {
     if (!e.agentId) {
       await takeReading($) // main-loop turns only, not subagents
     }
+    if (!e.agentId) await scanToday($)
     return result
+  })
+
+  // A compaction is not a turn, and the usage figures stay the last response's until the
+  // next one: take the size the compaction reports instead.
+  on('session.compact', async ($, e, next) => {
+    const result = await next(e)
+    const after = 'tokensAfter' in result ? result.tokensAfter : undefined
+    if (!e.agentId && e.trigger !== 'precompute' && after !== undefined) await setContext($, after)
+    return result
+  })
+
+  // A /clear starts the conversation over, with no session.start: the context is empty.
+  on('session.end', async ($, e, next) => {
+    if (e.reason === 'clear') await setContext($, 0)
+    return next(e)
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -54,15 +73,16 @@ export const register: Register = on => {
     const fiveHour = quota.find(l => l.kind === 'five_hour')
     const sevenDay = quota.find(l => l.kind === 'seven_day')
     const columns = e.props.bodyColumns
+    const spent = await read($, today)
 
     if (e.surface !== 'terminal') {
       const { Box, Text, Svg } = $.ui.resolve(e)
-      // Each group's rough width in columns, so a narrow band drops the right-most first.
+      // Each group's width in columns, so a narrow band drops the right-most first.
       const groups: { key: string; color: string; cells: number; draw: () => JSX.Element }[] = [
         {
           key: 'context',
           color: lv.hex,
-          cells: 27,
+          cells: fit(2, `${last.percent}%`, 'of context'),
           draw: () => (
             <Box key="context" flexDirection="row" alignItems="center" gap={1}>
               <Svg source={tank(last.percent, lv.hex)} alt={`${last.percent}% of context used`} width={18} height={18} />
@@ -78,7 +98,7 @@ export const register: Register = on => {
         groups.push({
           key: 'five-hour',
           color: q.hex,
-          cells: 27,
+          cells: fit(2, `${qUsed}%`, 'of session', fiveHour.resetsAt ? `↻ ${countdown(fiveHour.resetsAt, at)}` : ''),
           draw: () => (
             <Box key="five-hour" flexDirection="row" alignItems="center" gap={1}>
               <Svg source={ring(qUsed, q.hex)} alt={`${qUsed}% of session used`} width={16} height={16} />
@@ -95,12 +115,25 @@ export const register: Register = on => {
         groups.push({
           key: 'seven-day',
           color: q.hex,
-          cells: 21,
+          cells: fit(4, `${qUsed}%`, 'of weekly'),
           draw: () => (
             <Box key="seven-day" flexDirection="row" alignItems="center" gap={1}>
               <Svg source={week(qUsed, q.hex)} alt={`${qUsed}% of weekly used`} width={47} height={10} />
               <Text color={q.hex} bold>{`${qUsed}%`}</Text>
               <Text dimColor>of weekly</Text>
+            </Box>
+          ),
+        })
+      }
+      if (spent) {
+        groups.push({
+          key: 'today',
+          color: '#8a8a8a',
+          cells: fit(0, money(spent.usd), `today · ${short(spent.tokens)} tokens`),
+          draw: () => (
+            <Box key="today" flexDirection="row" alignItems="center" gap={1}>
+              <Text bold>{money(spent.usd)}</Text>
+              <Text dimColor>{`today · ${short(spent.tokens)} tokens`}</Text>
             </Box>
           ),
         })
@@ -150,12 +183,24 @@ export const register: Register = on => {
         {columns >= 80 && fiveHour?.resetsAt && <Text dimColor>{` ↻ ${countdown(fiveHour.resetsAt, at)}`}</Text>}
         {columns >= 80 && sevenDay && <Text color={q7!.color} bold>{`   ${used(sevenDay.percentUsed)}%`}</Text>}
         {columns >= 80 && sevenDay && <Text dimColor>{' of weekly'}</Text>}
+        {columns >= 110 && spent && <Text bold>{`   ${money(spent.usd)}`}</Text>}
+        {columns >= 110 && spent && <Text dimColor>{` today · ${short(spent.tokens)} tokens`}</Text>}
         {SHOW_TURNS && columns >= 120 && <Text dimColor>{'   last turns '}</Text>}
         {SHOW_TURNS && columns >= 120 && <Text color={lv.color}>{sparkline(history)}</Text>}
         {SHOW_TURNS && columns >= 120 && history.length > 1 && <Text dimColor>{trend(history)}</Text>}
       </Box>
     )
   })
+}
+
+// The desktop's text is proportional: a character takes about 0.8 of a column there
+// (measured on the band: `of context` is 123px, a column 16px). Rounded up for bold.
+const CHAR = 0.85
+
+// A group's width in columns: its icon's, its texts' and one between each.
+function fit(icon: number, ...texts: string[]) {
+  const parts = texts.filter(Boolean)
+  return Math.ceil(icon + parts.reduce((n, t) => n + t.length * CHAR, 0) + parts.length - (icon ? 0 : 1))
 }
 
 async function takeReading($: EngineInterface) {
@@ -169,9 +214,19 @@ async function takeReading($: EngineInterface) {
   )
 }
 
+// A reading of the size given, against the window the last reading had.
+async function setContext($: EngineInterface, tokens: number) {
+  const last = (await read($, readings)).at(-1)
+  const window = last?.window ?? (await $.session.usage()).context?.window
+  if (!window) return
+  const percent = Math.round((tokens / window) * 100)
+  await update($, readings, history => [...history, { tokens, window, percent }].slice(-HISTORY))
+}
+
 async function refresh($: EngineInterface) {
   const { rateLimits } = await $.session.usage()
   await saveLimits($, rateLimits)
+  await scanToday($) // other sessions add to today too
   const at = await $.clock.now()
   await update($, now, () => at)
 }
@@ -185,6 +240,43 @@ async function saveLimits($: EngineInterface, rateLimits: readonly TokenBarLimit
     return [...byKind.values()].filter(l => !l.resetsAt || Date.parse(l.resetsAt) > at)
   })
   await update($, now, () => at)
+}
+
+// The local calendar day, as YYYY-MM-DD.
+function dayOf(ms: number) {
+  const d = new Date(ms)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// One scan at a time per session; a request while one runs is folded into it.
+let scanning: Promise<void> | null = null
+
+function scanToday($: EngineInterface) {
+  scanning ??= runScan($).finally(() => (scanning = null))
+  return scanning
+}
+
+// Counts today from the transcripts. Off macOS, or when the scan fails, the band
+// simply goes without today's group.
+async function runScan($: EngineInterface) {
+  try {
+    const day = dayOf(await $.clock.now())
+    const roots = scanRoots(await $.env.get('CLAUDE_CONFIG_DIR'))
+    const { exitCode, stdout } = await $.process.run(
+      ['osascript', '-l', 'JavaScript', '-e', SCAN_SCRIPT, roots, SCAN_STATE, day],
+      { timeoutMs: 60_000 },
+    )
+    if (exitCode !== 0) return
+    const r = JSON.parse(stdout) as { day: string; tokens: number; usd: number }
+    if (r.day !== day || typeof r.tokens !== 'number' || typeof r.usd !== 'number') return
+    await update($, today, () => ({ day: r.day, tokens: r.tokens, usd: r.usd }))
+  } catch {
+    // Leave the last count in place.
+  }
+}
+
+function money(usd: number) {
+  return usd >= 100 ? `$${Math.round(usd)}` : `$${usd.toFixed(2)}`
 }
 
 function level(percentUsed: number) {

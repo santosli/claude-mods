@@ -1,7 +1,9 @@
 {
   "name": "token-bar",
-  "version": "2.0.0",
-  "description": "How full the context window and the quota are, above the prompt, green to red.",
-  "author": { "name": "santos" },
+  "version": "2.1.0",
+  "description": "How full the context window and the quota are, and what today cost, above the prompt.",
+  "author": {
+    "name": "santos"
+  },
   "types": "./types/index.d.ts"
 }

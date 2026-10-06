@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect, mock, test } from 'claude-code/testing'
 
 const T0 = Date.parse('2026-10-06T10:00:00Z')
 const BAND = { hasSurvey: false, isWorking: false, maxRows: 10 }
@@ -9,6 +9,7 @@ describe('token-bar', () => {
     let tokens = 36_100
     let rateLimits: { kind: string; percentUsed: number; resetsAt?: string }[] = []
     on('clock.now', () => ({ value: T0 }))
+    mock.store(on)
     on('session.start', ($, e) => ({ cwd: e.cwd }))
     on('session.usage', () => ({
       value: { startedAt: 0, rateLimits, context: { tokens, window: 200_000, percent: Math.round(tokens / 2_000) } },
@@ -51,6 +52,7 @@ describe('token-bar', () => {
   test('the desktop draws the tank, the ring and the week', async ($, on) => {
     let tokens = 20_000
     on('clock.now', () => ({ value: T0 }))
+    mock.store(on)
     on('session.start', ($, e) => ({ cwd: e.cwd }))
     on('session.usage', () => ({
       value: {
@@ -92,6 +94,7 @@ describe('token-bar', () => {
       { kind: 'seven_day', percentUsed: 5 },
     ]
     on('clock.now', () => ({ value: T0 }))
+    mock.store(on)
     on('session.start', ($, e) => ({ cwd: e.cwd }))
     on('session.usage', () => ({
       value: { startedAt: 0, rateLimits, context: { tokens: 483_500, window: 1_000_000, percent: 48 } },
@@ -121,5 +124,100 @@ describe('token-bar', () => {
     expect(await narrow.find({ type: 'Text', text: /^48%$/ })).toBeDefined()
     expect(await narrow.find({ type: 'Text', text: /^•$/ })).toBeDefined()
     await narrow.unmount()
+  })
+  test("today's tokens and cost come from the transcript scan, and a failed scan leaves the band", async ($, on) => {
+    const runs: string[][] = []
+    let scan: { exitCode: number; stdout: string } = { exitCode: 0, stdout: JSON.stringify({ day: '', tokens: 424_963_178, usd: 147.0413, unpriced: {} }) }
+    const day = (ms: number) => {
+      const d = new Date(ms)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    }
+    on('clock.now', () => ({ value: T0 }))
+    on('env.get', ($, e: any) => ({ value: e.name === 'CLAUDE_CONFIG_DIR' ? '/cfg, /work/.claude/projects/' : undefined }))
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    on('session.usage', () => ({
+      value: {
+        startedAt: 0,
+        rateLimits: [
+          { kind: 'five_hour', percentUsed: 24, resetsAt: new Date(T0 + 193 * 60_000).toISOString() },
+          { kind: 'seven_day', percentUsed: 11 },
+        ],
+        context: { tokens: 50_000, window: 200_000, percent: 25 },
+      },
+    }))
+    on('turn.complete', () => ({ text: '' }))
+    on('process.run', ($, e: any) => {
+      runs.push([...e.argv])
+      const stdout = scan.stdout.replace('"day":""', `"day":"${day(T0)}"`)
+      return { value: { exitCode: scan.exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    })
+
+    await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' } as any)
+    // The scan reads the configured transcripts for today's local date.
+    expect(runs[0]?.slice(0, 4)).toEqual(['osascript', '-l', 'JavaScript', '-e'])
+    // CLAUDE_CONFIG_DIR's entries, each a config home or a projects directory.
+    expect(runs[0]?.slice(5)).toEqual(['/cfg/projects,/work/.claude/projects/', '~/.token-bar', day(T0)])
+
+    for (const surface of ['desktop', 'terminal'] as const) {
+      const ui = await $.ui.mount({ plugin: 'token-bar', surface, component: 'AbovePrompt', props: { ...BAND, bodyColumns: 160 } } as any)
+      expect(await ui.find({ type: 'Text', text: /\$147$/ })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: /today · 425M tokens/ })).toBeDefined()
+      await ui.unmount()
+    }
+
+    // The desktop reports 95 columns for a full-width band: it holds all four groups.
+    const wide = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 95 } } as any)
+    expect(await wide.find({ type: 'Text', text: /\$147$/ })).toBeDefined()
+    expect(await wide.find({ type: 'Text', text: '•' })).toBeUndefined()
+    await wide.unmount()
+
+    // A main turn rescans; a subagent's turn does not.
+    const before = runs.length
+    await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1 } as any)
+    await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1, agentId: 'agent-1' } as any)
+    expect(runs.length).toBe(before + 1)
+
+    // A failed or garbled scan keeps the last count and the rest of the band.
+    scan = { exitCode: 1, stdout: '' }
+    await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1 } as any)
+    scan = { exitCode: 0, stdout: 'not json' }
+    await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1 } as any)
+    const ui = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 160 } } as any)
+    expect(await ui.find({ type: 'Text', text: /\$147$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^25%$/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('a compaction and a /clear empty the context without a turn', async ($, on) => {
+    on('clock.now', () => ({ value: T0 }))
+    mock.store(on)
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    // The usage figures stay the last response's until the next one.
+    on('session.usage', () => ({ value: { startedAt: 0, rateLimits: [], context: { tokens: 670_000, window: 1_000_000, percent: 67 } } }))
+    const MSGS = [{ role: 'user', text: 'summary', toolUses: [] }]
+    let after: number | undefined = 84_900
+    on('session.compact', (_$, e) => ({ messages: e.messages, tokensBefore: 670_000, tokensAfter: after }))
+    on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
+
+    await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' } as any)
+    const ui = await $.ui.mount({
+      plugin: 'token-bar',
+      surface: 'desktop',
+      component: 'AbovePrompt',
+      props: { ...BAND, bodyColumns: 160 },
+    } as any)
+    expect(await ui.find({ type: 'Text', text: '67%' })).toBeDefined()
+
+    // Ahead-of-time and a subagent's own compactions leave the band alone.
+    await $.session.compact({ trigger: 'precompute', messages: MSGS } as any)
+    await $.session.compact({ trigger: 'auto', agentId: 'a1', messages: MSGS } as any)
+    expect(await ui.find({ type: 'Text', text: '67%' })).toBeDefined()
+
+    await $.session.compact({ trigger: 'manual', messages: MSGS } as any)
+    expect((await ui.find({ type: 'Text', text: '8%' }))?.props.color).toBe('#30a14e')
+
+    await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as any)
+    expect(await ui.find({ type: 'Text', text: '0%' })).toBeDefined()
+    await ui.unmount()
   })
 })
