@@ -6,9 +6,7 @@ Claude Code mods, shipped as plugins. Requires Claude Code **2.1.287** or later.
 
 One line above the prompt that shows how full your context window and your plan's usage limits are, and what today's usage would cost at API prices.
 
-[![token-bar promo: the band's rings filling, turning yellow and red, and dropping back after /compact](docs/token-bar-promo.gif)](docs/token-bar-promo.mp4)
-
-▶ [Watch the 30-second promo with sound](docs/token-bar-promo.mp4) (1080p MP4)
+https://github.com/user-attachments/assets/d3748a88-43b6-4c02-a343-623e2c3aecdd
 
 ![token-bar in the Claude desktop app, above the prompt](docs/token-bar.png)
 
