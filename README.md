@@ -6,7 +6,7 @@ Claude Code mods, shipped as plugins. Requires Claude Code **2.1.287** or later.
 
 One line above the prompt that shows how full your context window and your plan's usage limits are.
 
-![token-bar preview](docs/token-bar-preview.png)
+![token-bar in the Claude desktop app, above the prompt](docs/token-bar.png)
 
 ```
 ▣ 36% of context     ◔ 12% of session ↻ 2h 46m     ▮▯▯▯▯▯▯ 8% of weekly
