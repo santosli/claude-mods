@@ -31,7 +31,11 @@ const today = atom({ plugin: 'token-bar', key: 'today' } as const, null as Token
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
+    // The quota is the account's: show the last one known until a response reports it again.
+    const stored = await $.store.get('limits').catch(() => undefined)
+    if (Array.isArray(stored)) await saveLimits($, stored as TokenBarLimit[])
     await takeReading($)
+    await askApp($)
     await scanToday($)
     // Quota moves between turns too, and the countdown runs down: refresh both.
     $.clock.every(TICK_MS, () => refresh($))
@@ -47,19 +51,32 @@ export const register: Register = on => {
     return result
   })
 
-  // A compaction is not a turn, and the usage figures stay the last response's until the
-  // next one: take the size the compaction reports instead.
+  // The engine's own measurements: the context's fill and the quota, whenever either moves.
+  on('session.measure', async ($, e, next) => {
+    if (e.changed.includes('rateLimits')) await saveLimits($, e.rateLimits, true)
+    if (e.changed.includes('context') && e.context.tokens !== undefined) await addReading($, e.context.tokens, e.context.window)
+    return next(e)
+  })
+
+  // A compaction is not a turn, and no response has measured the window since: estimate it,
+  // system prompt and tools included, as /context does. The size the compaction reports
+  // counts the conversation alone.
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
+    if (e.agentId || e.trigger === 'precompute' || 'skip' in result) return result
     const after = 'tokensAfter' in result ? result.tokensAfter : undefined
-    if (!e.agentId && e.trigger !== 'precompute' && after !== undefined) await setContext($, after)
+    await setContext($, (await estimate($)) ?? after)
     return result
   })
 
-  // A /clear starts the conversation over, with no session.start: the context is empty.
+  // A /clear starts the conversation over, with no session.start.
   on('session.end', async ($, e, next) => {
-    if (e.reason === 'clear') await setContext($, 0)
-    return next(e)
+    if (e.reason !== 'clear') return next(e)
+    await setContext($, 0)
+    const result = await next(e)
+    // Once the conversation is gone, what is left is the system prompt and the tools.
+    $.clock.after(1_000, () => void estimate($).then(t => setContext($, t)))
+    return result
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -211,33 +228,91 @@ function fit(icon: number, ...texts: string[]) {
 
 async function takeReading($: EngineInterface) {
   const { context, rateLimits } = await $.session.usage()
-  await saveLimits($, rateLimits)
+  await saveLimits($, rateLimits, true)
   if (!context?.window) return
-  const tokens = context.tokens ?? 0
-  const percent = context.percent ?? Math.round((tokens / context.window) * 100)
-  await update($, readings, history =>
-    [...history, { tokens, window: context.window, percent }].slice(-HISTORY),
-  )
+  // Before a response has measured the window (a new session, or one just compacted) there
+  // is no fill: estimate it rather than draw an empty window.
+  const tokens = context.tokens ?? (await estimate($))
+  if (tokens !== undefined) await addReading($, tokens, context.window)
+}
+
+// The window's fill as /context estimates it locally, without a request.
+async function estimate($: EngineInterface) {
+  try {
+    const { context } = await $.session.usage({ breakdown: 'summary' })
+    return context.breakdown?.totalTokens
+  } catch {
+    return undefined
+  }
 }
 
 // A reading of the size given, against the window the last reading had.
-async function setContext($: EngineInterface, tokens: number) {
+async function setContext($: EngineInterface, tokens: number | undefined) {
+  if (tokens === undefined) return
   const last = (await read($, readings)).at(-1)
   const window = last?.window ?? (await $.session.usage()).context?.window
-  if (!window) return
+  if (window) await addReading($, tokens, window)
+}
+
+async function addReading($: EngineInterface, tokens: number, window: number) {
   const percent = Math.round((tokens / window) * 100)
-  await update($, readings, history => [...history, { tokens, window, percent }].slice(-HISTORY))
+  await update($, readings, history => {
+    const last = history.at(-1)
+    if (last && last.tokens === tokens && last.window === window) return history
+    return [...history, { tokens, window, percent }].slice(-HISTORY)
+  })
 }
 
 async function refresh($: EngineInterface) {
   const { rateLimits } = await $.session.usage()
-  await saveLimits($, rateLimits)
+  await saveLimits($, rateLimits, true)
+  await askApp($)
   await scanToday($) // other sessions add to today too
   const at = await $.clock.now()
   await update($, now, () => at)
 }
 
-async function saveLimits($: EngineInterface, rateLimits: readonly TokenBarLimit[]) {
+// Whether the engine has reported the quota in this session. The desktop app's sessions
+// may not pass it on; the app's own usage card is asked then.
+let engineReports = false
+let askedAt = -Infinity
+const APP_USAGE = 'mcp__ccd_session_mgmt__get_usage'
+const ASK_EVERY_MS = 120_000
+
+async function askApp($: EngineInterface) {
+  if (engineReports) return
+  const at = await $.clock.now()
+  if (at - askedAt < ASK_EVERY_MS) return
+  askedAt = at
+  try {
+    if (!(await $.tool.list()).some(t => t.name === APP_USAGE)) return
+    const answer = await $.tool.call({ tool: APP_USAGE } as Parameters<EngineInterface['tool']['call']>[0])
+    if (answer.isError || answer.deny !== undefined) return
+    const text = answer.text ?? textOf(answer.result)
+    const plan = JSON.parse(text.slice(text.indexOf('{'))).plan as
+      | { status: string; windows?: { label: string; percentUsed: number; resetsAt?: string }[] }
+      | undefined
+    if (plan?.status !== 'ok' || !plan.windows) return
+    const found: TokenBarLimit[] = []
+    for (const w of plan.windows) {
+      const kind = /^5-hour/i.test(w.label) ? 'five_hour' : /^weekly · all/i.test(w.label) ? 'seven_day' : undefined
+      if (kind && typeof w.percentUsed === 'number') found.push({ kind, percentUsed: w.percentUsed, resetsAt: w.resetsAt })
+    }
+    if (!engineReports) await saveLimits($, found)
+  } catch {
+    // No app to ask, or it could not answer: keep what is shown.
+  }
+}
+
+// An MCP tool's output as text: a string, or its content blocks' text joined.
+function textOf(result: unknown): string {
+  if (typeof result === 'string') return result
+  if (Array.isArray(result)) return result.map(b => (b && typeof b.text === 'string' ? b.text : '')).join('')
+  return ''
+}
+
+async function saveLimits($: EngineInterface, rateLimits: readonly TokenBarLimit[], fromEngine = false) {
+  if (fromEngine && rateLimits.length > 0) engineReports = true
   const at = await $.clock.now()
   // A response may report only some windows: keep each window's last reading until it resets.
   await update($, limits, kept => {
@@ -245,6 +320,8 @@ async function saveLimits($: EngineInterface, rateLimits: readonly TokenBarLimit
     for (const { kind, percentUsed, resetsAt } of rateLimits) byKind.set(kind, { kind, percentUsed, resetsAt })
     return [...byKind.values()].filter(l => !l.resetsAt || Date.parse(l.resetsAt) > at)
   })
+  // Kept across sessions too, for the next one to start from.
+  if (rateLimits.length > 0) await $.store.set('limits', await read($, limits)).catch(() => {})
   await update($, now, () => at)
 }
 

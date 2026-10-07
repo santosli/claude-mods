@@ -194,11 +194,23 @@ describe('token-bar', () => {
     on('clock.now', () => ({ value: T0 }))
     mock.store(on)
     on('session.start', ($, e) => ({ cwd: e.cwd }))
-    // The usage figures stay the last response's until the next one.
-    on('session.usage', () => ({ value: { startedAt: 0, rateLimits: [], context: { tokens: 670_000, window: 1_000_000, percent: 67 } } }))
+    // The usage figures stay the last response's until the next one; /context's estimate
+    // counts the system prompt and tools too.
+    let estimate = 52_000
+    on('session.usage', (_$, e) => ({
+      value: {
+        startedAt: 0,
+        rateLimits: [],
+        context: {
+          tokens: 670_000,
+          window: 1_000_000,
+          percent: 67,
+          ...(e?.breakdown ? { breakdown: { totalTokens: estimate } } : {}),
+        },
+      },
+    }))
     const MSGS = [{ role: 'user', text: 'summary', toolUses: [] }]
-    let after: number | undefined = 84_900
-    on('session.compact', (_$, e) => ({ messages: e.messages, tokensBefore: 670_000, tokensAfter: after }))
+    on('session.compact', (_$, e) => ({ messages: e.messages, tokensBefore: 670_000, tokensAfter: 4_000 }))
     on('session.end', (_$, e) => ({ sessionId: e.sessionId }))
 
     await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' } as any)
@@ -208,18 +220,80 @@ describe('token-bar', () => {
       component: 'AbovePrompt',
       props: { ...BAND, bodyColumns: 160 },
     } as any)
-    expect(await ui.find({ type: 'Text', text: '67%' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^67%$/ })).toBeDefined()
 
     // Ahead-of-time and a subagent's own compactions leave the band alone.
     await $.session.compact({ trigger: 'precompute', messages: MSGS } as any)
     await $.session.compact({ trigger: 'auto', agentId: 'a1', messages: MSGS } as any)
-    expect(await ui.find({ type: 'Text', text: '67%' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^67%$/ })).toBeDefined()
 
     await $.session.compact({ trigger: 'manual', messages: MSGS } as any)
-    expect((await ui.find({ type: 'Text', text: '8%' }))?.props.color).toBe('#30a14e')
+    expect((await ui.find({ type: 'Text', text: /^5%$/ }))?.props.color).toBe('#30a14e')
 
     await $.session.end({ reason: 'clear', sessionId: 's1', resume: {} } as any)
-    expect(await ui.find({ type: 'Text', text: '0%' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^0%$/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('a session with no response yet estimates the context and starts from the last quota', async ($, on) => {
+    on('clock.now', () => ({ value: T0 }))
+    mock.store(on, {
+      limits: [
+        { kind: 'five_hour', percentUsed: 30, resetsAt: new Date(T0 + 60 * 60_000).toISOString() },
+        { kind: 'seven_day', percentUsed: 12, resetsAt: new Date(T0 + 3 * 86_400_000).toISOString() },
+        // One that has reset since is dropped.
+        { kind: 'spend_limit', percentUsed: 50, resetsAt: new Date(T0 - 60_000).toISOString() },
+      ],
+    })
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    on('session.measure', (_$, e) => ({ changed: e.changed }))
+    const usage = { startedAt: 0, rateLimits: [], context: { window: 1_000_000 } }
+    on('session.usage', (_$, e) => ({
+      value: e?.breakdown ? { ...usage, context: { ...usage.context, breakdown: { totalTokens: 41_000 } } } : usage,
+    }))
+
+    await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' } as any)
+    const ui = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 160 } } as any)
+    expect(await ui.find({ type: 'Text', text: /^4%$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^0%$/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^30%$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^12%$/ })).toBeDefined()
+
+    // The engine's measurements move the band between turns.
+    await $.session.measure({
+      context: { tokens: 230_000, window: 1_000_000, percent: 23 },
+      rateLimits: [{ kind: 'five_hour', percentUsed: 41, resetsAt: new Date(T0 + 60 * 60_000).toISOString() }],
+      changed: ['context', 'rateLimits'],
+    } as any)
+    expect(await ui.find({ type: 'Text', text: /^23%$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^41%$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^12%$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^50%$/ })).toBeUndefined()
+    await ui.unmount()
+  })
+
+  test("with no quota from the engine, the desktop app's usage card fills it in", async ($, on) => {
+    on('clock.now', () => ({ value: T0 }))
+    mock.store(on)
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    on('session.usage', () => ({ value: { startedAt: 0, rateLimits: [], context: { tokens: 150_000, window: 1_000_000, percent: 15 } } }))
+    on('tool.list', () => ({ value: [{ name: 'mcp__ccd_session_mgmt__get_usage' }] }) as any)
+    const plan = {
+      status: 'ok',
+      windows: [
+        { label: '5-hour limit', percentUsed: 4, resetsAt: new Date(T0 + 60 * 60_000).toISOString() },
+        { label: 'Weekly · all models', percentUsed: 16, resetsAt: new Date(T0 + 86_400_000).toISOString() },
+        { label: 'Weekly · Fable', percentUsed: 0, resetsAt: new Date(T0 + 86_400_000).toISOString() },
+      ],
+    }
+    on('tool.call', { tool: 'mcp__ccd_session_mgmt__get_usage' } as any, () => ({ result: [{ type: 'text', text: JSON.stringify({ plan }) }] }) as any)
+
+    await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' } as any)
+    const ui = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 160 } } as any)
+    expect(await ui.find({ type: 'Text', text: /^15%$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^4%$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^16%$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /of weekly/ })).toBeDefined()
     await ui.unmount()
   })
 })
