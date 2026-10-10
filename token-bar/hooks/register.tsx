@@ -134,12 +134,13 @@ export const register: Register = on => {
         groups.push({
           key: 'seven-day',
           color: q.hex,
-          cells: fit(2, `${qUsed}%`, 'of weekly'),
+          cells: fit(2, `${qUsed}%`, 'of weekly', sevenDay.resetsAt ? `↻ ${countdown(sevenDay.resetsAt, at)}` : ''),
           draw: () => (
             <Box key="seven-day" flexDirection="row" alignItems="center" gap={1}>
               <Svg source={week(qUsed, q.hex)} alt={`${qUsed}% of weekly used`} width={18} height={18} />
               <Text color={q.hex} bold>{`${qUsed}%`}</Text>
               <Text dimColor>of weekly</Text>
+              {sevenDay.resetsAt && <Text dimColor>{`↻ ${countdown(sevenDay.resetsAt, at)}`}</Text>}
             </Box>
           ),
         })
@@ -206,6 +207,7 @@ export const register: Register = on => {
         {columns >= 80 && fiveHour?.resetsAt && <Text dimColor>{` ↻ ${countdown(fiveHour.resetsAt, at)}`}</Text>}
         {columns >= 80 && sevenDay && <Text color={q7!.color} bold>{`   ${used(sevenDay.percentUsed)}%`}</Text>}
         {columns >= 80 && sevenDay && <Text dimColor>{' of weekly'}</Text>}
+        {columns >= 80 && sevenDay?.resetsAt && <Text dimColor>{` ↻ ${countdown(sevenDay.resetsAt, at)}`}</Text>}
         {columns >= 110 && spent && <Text bold>{`   ${money(spent.usd)}`}</Text>}
         {columns >= 110 && spent && <Text dimColor>{` today · ${short(spent.tokens)} tokens`}</Text>}
         {SHOW_TURNS && columns >= 120 && <Text dimColor>{'   last turns '}</Text>}
@@ -378,6 +380,8 @@ function gauge(used: number) {
 
 function countdown(resetsAt: string, at: number) {
   const minutes = Math.max(0, Math.floor((Date.parse(resetsAt) - at) / 60_000))
+  // The weekly window runs for days: days and hours read better than a count of hours.
+  if (minutes >= 24 * 60) return `${Math.floor(minutes / 1440)}d ${Math.floor((minutes % 1440) / 60)}h`
   if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
   return `${minutes}m`
 }

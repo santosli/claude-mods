@@ -59,7 +59,7 @@ describe('token-bar', () => {
         startedAt: 0,
         rateLimits: [
           { kind: 'five_hour', percentUsed: 72, resetsAt: new Date(T0 + 45 * 60_000).toISOString() },
-          { kind: 'seven_day', percentUsed: 7 },
+          { kind: 'seven_day', percentUsed: 7, resetsAt: new Date(T0 + (3 * 24 + 4) * 60 * 60_000).toISOString() },
         ],
         context: { tokens, window: 1_000_000, percent: Math.round(tokens / 10_000) },
       },
@@ -81,6 +81,8 @@ describe('token-bar', () => {
     expect((await ui.find({ type: 'Text', text: /^72%$/ }))?.props.color).toBe('#d99a00')
     expect((await ui.find({ type: 'Text', text: /^7%$/ }))?.props.color).toBe('#30a14e')
     expect(await ui.find({ type: 'Text', text: /↻ 45m/ })).toBeDefined()
+    // The week counts down in days and hours.
+    expect(await ui.find({ type: 'Text', text: /^↻ 3d 4h$/ })).toBeDefined()
     // Each group says what it measures.
     for (const label of ['of context', 'of session', 'of weekly']) {
       expect(await ui.find({ type: 'Text', text: new RegExp(`^${label}$`) })).toBeDefined()
