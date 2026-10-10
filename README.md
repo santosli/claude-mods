@@ -11,15 +11,15 @@ https://github.com/user-attachments/assets/d3748a88-43b6-4c02-a343-623e2c3aecdd
 ![token-bar in the Claude desktop app, above the prompt](docs/token-bar.png)
 
 ```
-◔ 36% of context │ ◔ 12% of session ↻ 2h 46m │ ◌ 8% of weekly │ $42.17 today · 118M tokens
+◔ 36% of context │ ◔ 12% of session ↻ 2h 46m │ ◌ 8% of weekly ↻ 3d 4h │ $42.17 today · 118M tokens
 ```
 
 - **Context**: how much of the current conversation's context window is used.
 - **Session**: how much of the 5-hour usage limit is used, and when it resets.
-- **Weekly**: how much of the weekly usage limit is used.
+- **Weekly**: how much of the weekly usage limit is used, and when it resets.
 - **Today**: tokens used today across all your Claude Code sessions, and what they would cost at API prices (see below).
 - Each one is colored like a phone battery: **green** under 60%, **yellow** under 80%, **red** from 80%.
-- It updates after every turn and after `/compact` or `/clear`; the quota, countdown and today's total refresh every 30 seconds.
+- It updates after every turn and after `/compact` or `/clear`; the quota, countdowns and today's total refresh every 30 seconds.
 - The desktop app draws rings (context and session fill clockwise; weekly is split into seven arcs, one a day) with a rule between groups; the terminal draws text.
 - When the band is too narrow, groups are hidden from the right and leave a colored `•` behind.
 
@@ -69,8 +69,7 @@ token-bar 在 Claude Code 输入框上方显示一行用量（[30 秒宣传片](
 
 - **context**：当前对话的上下文窗口已用多少
 - **session**：5 小时额度已用多少，以及多久后重置
-- **weekly**：每周额度已用多少
-
+- **weekly**：每周额度已用多少，以及多久后重置
 - **today**：今天所有 Claude Code 会话一共用了多少 token，按 API 价格折算值多少钱
 
 颜色跟手机电量一样：60% 以下绿色，60–79% 黄色，80% 及以上红色。每轮回复后、`/compact` 和 `/clear` 后更新；额度、倒计时和今日用量每 30 秒刷新一次。session 和 weekly 只在订阅账号下显示（会话收到第一条回复后出现）。
