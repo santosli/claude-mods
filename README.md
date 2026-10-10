@@ -8,12 +8,6 @@ One line above the prompt that shows how full your context window and your plan'
 
 https://github.com/user-attachments/assets/8f059df5-95c5-4a7b-ae20-fa0baffb73ff
 
-![token-bar's band as the Claude desktop app draws it, above the prompt](docs/token-bar.png)
-
-```
-◔ 36% of context │ ◔ 12% of session ↻ 2h 46m │ ◌ 8% of weekly ↻ 3d 4h │ $42.17 today · 118M tokens
-```
-
 - **Context**: how much of the current conversation's context window is used.
 - **Session**: how much of the 5-hour usage limit is used, and when it resets.
 - **Weekly**: how much of the weekly usage limit is used, and when it resets.
@@ -23,7 +17,7 @@ https://github.com/user-attachments/assets/8f059df5-95c5-4a7b-ae20-fa0baffb73ff
 - The desktop app draws rings (context and session fill clockwise; weekly is split into seven arcs, one a day) with a rule between groups; the terminal draws text.
 - When the band is too narrow, groups are hidden from the right and leave a colored `•` behind.
 
-In the desktop app's dark and light themes: early in the day, a busy session, and close to the limits.
+Early in the day, a busy session, and close to the limits, in the desktop app's dark and light themes:
 
 ![Dark theme, early in the day: everything green](docs/token-bar-dark-1.png)
 ![Dark theme, a busy session: context and session yellow](docs/token-bar-dark-2.png)
@@ -32,6 +26,16 @@ In the desktop app's dark and light themes: early in the day, a busy session, an
 ![Light theme, early in the day: everything green](docs/token-bar-light-1.png)
 ![Light theme, a busy session: context and session yellow](docs/token-bar-light-2.png)
 ![Light theme, close to the limits: all red, the session resets in 14 minutes](docs/token-bar-light-3.png)
+
+And in the terminal, as text with a gauge for the context:
+
+![Dark terminal, early in the day: everything green](docs/token-bar-terminal-dark-1.png)
+![Dark terminal, a busy session: context and session yellow](docs/token-bar-terminal-dark-2.png)
+![Dark terminal, close to the limits: all red, the session resets in 14 minutes](docs/token-bar-terminal-dark-3.png)
+
+![Light terminal, early in the day: everything green](docs/token-bar-terminal-light-1.png)
+![Light terminal, a busy session: context and session yellow](docs/token-bar-terminal-light-2.png)
+![Light terminal, close to the limits: all red, the session resets in 14 minutes](docs/token-bar-terminal-light-3.png)
 
 Session and weekly only appear on a Claude subscription, once the first reply of the session has arrived. With an API key there are no usage limits to show, so only the context is drawn.
 
@@ -84,7 +88,7 @@ token-bar 在 Claude Code 输入框上方显示一行用量（[40 秒宣传片](
 
 颜色跟手机电量一样：60% 以下绿色，60–79% 黄色，80% 及以上红色。每轮回复后、`/compact` 和 `/clear` 后更新；额度、倒计时和今日用量每 30 秒刷新一次。session 和 weekly 只在订阅账号下显示（会话收到第一条回复后出现）。
 
-深色和浅色主题下的三种情况：刚开工、用得正猛、快到额度上限（见上方截图）。
+上方截图是桌面端和终端在深色、浅色主题下的三种情况：刚开工、用得正猛、快到额度上限。
 
 今日用量读取本地对话记录，所以插件加载之前的会话也算在内。计算规则和 ccusage 一致（按回复去重、按本地日期统计、按官方价格计费），结果与 `ccusage claude daily` 逐日一致。金额是**按 API 价格的折算值**，订阅用户并不会被这样扣费。今日用量依赖 `osascript`，**仅支持 macOS**。
 
