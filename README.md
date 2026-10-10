@@ -6,9 +6,9 @@ Claude Code mods, shipped as plugins. Requires Claude Code **2.1.287** or later.
 
 One line above the prompt that shows how full your context window and your plan's usage limits are, and what today's usage would cost at API prices.
 
-https://github.com/user-attachments/assets/d3748a88-43b6-4c02-a343-623e2c3aecdd
+https://github.com/user-attachments/assets/8f059df5-95c5-4a7b-ae20-fa0baffb73ff
 
-![token-bar in the Claude desktop app, above the prompt](docs/token-bar.png)
+![token-bar's band as the Claude desktop app draws it, above the prompt](docs/token-bar.png)
 
 ```
 ◔ 36% of context │ ◔ 12% of session ↻ 2h 46m │ ◌ 8% of weekly ↻ 3d 4h │ $42.17 today · 118M tokens
@@ -22,6 +22,16 @@ https://github.com/user-attachments/assets/d3748a88-43b6-4c02-a343-623e2c3aecdd
 - It updates after every turn and after `/compact` or `/clear`; the quota, countdowns and today's total refresh every 30 seconds.
 - The desktop app draws rings (context and session fill clockwise; weekly is split into seven arcs, one a day) with a rule between groups; the terminal draws text.
 - When the band is too narrow, groups are hidden from the right and leave a colored `•` behind.
+
+In the desktop app's dark and light themes: early in the day, a busy session, and close to the limits.
+
+![Dark theme, early in the day: everything green](docs/token-bar-dark-1.png)
+![Dark theme, a busy session: context and session yellow](docs/token-bar-dark-2.png)
+![Dark theme, close to the limits: all red, the session resets in 14 minutes](docs/token-bar-dark-3.png)
+
+![Light theme, early in the day: everything green](docs/token-bar-light-1.png)
+![Light theme, a busy session: context and session yellow](docs/token-bar-light-2.png)
+![Light theme, close to the limits: all red, the session resets in 14 minutes](docs/token-bar-light-3.png)
 
 Session and weekly only appear on a Claude subscription, once the first reply of the session has arrived. With an API key there are no usage limits to show, so only the context is drawn.
 
@@ -65,7 +75,7 @@ claude plugin test ./token-bar
 
 ## 中文说明
 
-token-bar 在 Claude Code 输入框上方显示一行用量（[30 秒宣传片](https://github.com/user-attachments/assets/d3748a88-43b6-4c02-a343-623e2c3aecdd)）：
+token-bar 在 Claude Code 输入框上方显示一行用量（[40 秒宣传片](https://github.com/user-attachments/assets/8f059df5-95c5-4a7b-ae20-fa0baffb73ff)）：
 
 - **context**：当前对话的上下文窗口已用多少
 - **session**：5 小时额度已用多少，以及多久后重置
@@ -73,6 +83,8 @@ token-bar 在 Claude Code 输入框上方显示一行用量（[30 秒宣传片](
 - **today**：今天所有 Claude Code 会话一共用了多少 token，按 API 价格折算值多少钱
 
 颜色跟手机电量一样：60% 以下绿色，60–79% 黄色，80% 及以上红色。每轮回复后、`/compact` 和 `/clear` 后更新；额度、倒计时和今日用量每 30 秒刷新一次。session 和 weekly 只在订阅账号下显示（会话收到第一条回复后出现）。
+
+深色和浅色主题下的三种情况：刚开工、用得正猛、快到额度上限（见上方截图）。
 
 今日用量读取本地对话记录，所以插件加载之前的会话也算在内。计算规则和 ccusage 一致（按回复去重、按本地日期统计、按官方价格计费），结果与 `ccusage claude daily` 逐日一致。金额是**按 API 价格的折算值**，订阅用户并不会被这样扣费。今日用量依赖 `osascript`，**仅支持 macOS**。
 
