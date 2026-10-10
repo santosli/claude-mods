@@ -127,6 +127,50 @@ describe('token-bar', () => {
     expect(await narrow.find({ type: 'Text', text: /^•$/ })).toBeDefined()
     await narrow.unmount()
   })
+  test('the desktop band hides a group before its text would wrap', async ($, on) => {
+    on('clock.now', () => ({ value: T0 }))
+    mock.store(on)
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    on('session.usage', () => ({
+      value: {
+        startedAt: 0,
+        rateLimits: [
+          { kind: 'five_hour', percentUsed: 85, resetsAt: new Date(T0 + 163 * 60_000).toISOString() },
+          { kind: 'seven_day', percentUsed: 28, resetsAt: new Date(T0 + 85 * 3_600_000).toISOString() },
+        ],
+        context: { tokens: 80_000, window: 1_000_000, percent: 8 },
+      },
+    }))
+    on('turn.complete', () => ({ text: '' }))
+    on('env.get', ($, e: any) => ({ value: e.name === 'CLAUDE_CONFIG_DIR' ? '/cfg' : undefined }))
+    on('process.run', () => {
+      const d = new Date(T0)
+      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const stdout = JSON.stringify({ day, tokens: 1_234_000, usd: 12.34, unpriced: {} })
+      return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    })
+    await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' } as any)
+    await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1 } as any)
+
+    // Measured in the desktop: three groups and a dot for today take 70.5 columns, so 70 can't hold them.
+    const narrow = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 70 } } as any)
+    expect(await narrow.find({ type: 'Text', text: /^85%$/ })).toBeDefined()
+    expect(await narrow.find({ type: 'Text', text: /^28%$/ })).toBeUndefined()
+    expect(await narrow.find({ type: 'Text', text: '•' })).toBeDefined()
+    await narrow.unmount()
+
+    const roomy = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 72 } } as any)
+    expect(await roomy.find({ type: 'Text', text: /^28%$/ })).toBeDefined()
+    expect(await roomy.find({ type: 'Text', text: '↻ 3d 13h' })).toBeDefined()
+    expect(await roomy.find({ type: 'Text', text: /today/ })).toBeUndefined()
+    await roomy.unmount()
+
+    // All four take 92.3 columns there.
+    const full = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 94 } } as any)
+    expect(await full.find({ type: 'Text', text: 'today · 1.2M tokens' })).toBeDefined()
+    expect(await full.find({ type: 'Text', text: '•' })).toBeUndefined()
+    await full.unmount()
+  })
   test("today's tokens and cost come from the transcript scan, and a failed scan leaves the band", async ($, on) => {
     const runs: string[][] = []
     let scan: { exitCode: number; stdout: string } = { exitCode: 0, stdout: JSON.stringify({ day: '', tokens: 424_963_178, usd: 147.0413, unpriced: {} }) }

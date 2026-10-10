@@ -101,7 +101,7 @@ export const register: Register = on => {
         {
           key: 'context',
           color: lv.hex,
-          cells: fit(2, `${last.percent}%`, 'of context'),
+          cells: fit(RING, `${last.percent}%`, 'of context'),
           draw: () => (
             <Box key="context" flexDirection="row" alignItems="center" gap={1}>
               <Svg source={ring(last.percent, lv.hex)} alt={`${last.percent}% of context used`} width={18} height={18} />
@@ -117,7 +117,7 @@ export const register: Register = on => {
         groups.push({
           key: 'five-hour',
           color: q.hex,
-          cells: fit(2, `${qUsed}%`, 'of session', fiveHour.resetsAt ? `↻ ${countdown(fiveHour.resetsAt, at)}` : ''),
+          cells: fit(RING, `${qUsed}%`, 'of session', fiveHour.resetsAt ? `↻ ${countdown(fiveHour.resetsAt, at)}` : ''),
           draw: () => (
             <Box key="five-hour" flexDirection="row" alignItems="center" gap={1}>
               <Svg source={ring(qUsed, q.hex)} alt={`${qUsed}% of session used`} width={18} height={18} />
@@ -134,7 +134,7 @@ export const register: Register = on => {
         groups.push({
           key: 'seven-day',
           color: q.hex,
-          cells: fit(2, `${qUsed}%`, 'of weekly', sevenDay.resetsAt ? `↻ ${countdown(sevenDay.resetsAt, at)}` : ''),
+          cells: fit(RING, `${qUsed}%`, 'of weekly', sevenDay.resetsAt ? `↻ ${countdown(sevenDay.resetsAt, at)}` : ''),
           draw: () => (
             <Box key="seven-day" flexDirection="row" alignItems="center" gap={1}>
               <Svg source={week(qUsed, q.hex)} alt={`${qUsed}% of weekly used`} width={18} height={18} />
@@ -171,10 +171,16 @@ export const register: Register = on => {
           ),
         })
       }
-      let room = columns - 2
-      // Groups sit a rule apart: a column of space, the rule, and a column again; three in all.
-      const shown = groups.filter((g, i) => (room -= g.cells + (i > 0 ? 3 : 0)) >= 0 || i === 0)
-      const hidden = groups.slice(shown.length)
+      // Groups sit a rule apart: a column of space, the rule, and a column again. Those that
+      // don't fit leave a dot each, a column apart, so the band never wraps.
+      const rule = 2 + width('│')
+      const dots = (n: number) => (n ? 1 + n * width('•') + (n - 1) : 0)
+      const need = (k: number) =>
+        groups.slice(0, k).reduce((n, g) => n + g.cells, 0) + (k - 1) * rule + dots(groups.length - k)
+      let count = groups.length
+      while (count > 1 && need(count) > columns - 2 - MARGIN) count--
+      const shown = groups.slice(0, count)
+      const hidden = groups.slice(count)
 
       return (
         <Box flexDirection="row" alignItems="center" paddingX={1} gap={1}>
@@ -218,14 +224,28 @@ export const register: Register = on => {
   })
 }
 
-// The desktop's text is proportional: a character takes about 0.8 of a column there
-// (measured on the band: `of context` is 123px, a column 16px). Rounded up for bold.
-const CHAR = 0.85
+// The desktop's band is 13px system text, and a column there is 8px. Each character's width in
+// columns, measured in Chromium and rounded up; anything not listed counts as wide.
+const CHARS: Record<string, number> = {
+  '0': 1.02, '1': 0.75, '2': 0.98, '3': 1.01, '4': 1.04, '5': 1, '6': 1.03, '7': 0.92, '8': 1.03, '9': 1.03,
+  a: 0.89, b: 0.99, c: 0.9, d: 0.99, e: 0.92, f: 0.58, g: 0.99, h: 0.95, i: 0.4, j: 0.4, k: 0.88, l: 0.41, m: 1.41,
+  n: 0.94, o: 0.96, p: 0.99, q: 0.99, r: 0.61, s: 0.85, t: 0.59, u: 0.94, v: 0.88, w: 1.25, x: 0.85, y: 0.88, z: 0.87,
+  ' ': 0.45, '.': 0.48, $: 1.02, '%': 1.5, M: 1.42, '↻': 1.32, '·': 0.48, '•': 0.76, '│': 0.42,
+}
+// Bold figures run about 7% wider. The rings are 18px.
+const BOLD = 1.07
+const RING = 18 / 8
+// Half a column to spare for rounding in the desktop's layout.
+const MARGIN = 0.5
 
-// A group's width in columns: its icon's, its texts' and one between each.
-function fit(icon: number, ...texts: string[]) {
+function width(text: string) {
+  return [...text].reduce((n, c) => n + (CHARS[c] ?? 1.6), 0)
+}
+
+// A group's width in columns: its icon's, its bold figure's, its texts' and a column between each.
+function fit(icon: number, figure: string, ...texts: string[]) {
   const parts = texts.filter(Boolean)
-  return Math.ceil(icon + parts.reduce((n, t) => n + t.length * CHAR, 0) + parts.length - (icon ? 0 : 1))
+  return icon + width(figure) * BOLD + parts.reduce((n, t) => n + width(t), 0) + parts.length + (icon ? 1 : 0)
 }
 
 async function takeReading($: EngineInterface) {

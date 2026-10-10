@@ -173,14 +173,15 @@ function run(argv) {
     }
   }
 
-  const tmp = statePath + '.' + $.NSProcessInfo.processInfo.processIdentifier + '.tmp'
-  $(JSON.stringify(state)).writeToFileAtomicallyEncodingError(tmp, true, $.NSUTF8StringEncoding, $())
-  fm.removeItemAtPathError(statePath, $())
-  fm.moveItemAtPathToPathError(tmp, statePath, $())
+  // An atomic write renames its own temporary file over the state, so sessions scanning at once
+  // leave the last one's and nothing behind.
+  $(JSON.stringify(state)).writeToFileAtomicallyEncodingError(statePath, true, $.NSUTF8StringEncoding, $())
   const names = fm.contentsOfDirectoryAtPathError(stateDir, $())
   if (!names.isNil()) for (let i = 0; i < names.count; i++) {
     const n = names.objectAtIndex(i).js
-    if (/^scan-\d{4}-\d{2}-\d{2}\.json$/.test(n) && n !== 'scan-' + day + '.json') fm.removeItemAtPathError(stateDir + '/' + n, $())
+    // Earlier days' state, and the temporary files 2.3.0 and before could leave when two raced.
+    const stale = /^scan-\d{4}-\d{2}-\d{2}\.json$/.test(n) ? n !== 'scan-' + day + '.json' : /^scan-[\d-]+\.json\.\d+\.tmp$/.test(n)
+    if (stale) fm.removeItemAtPathError(stateDir + '/' + n, $())
   }
   return JSON.stringify({ day: day, tokens: state.tokens, usd: Math.round(state.usd * 1e4) / 1e4, unpriced: state.unpriced, roots: roots.length })
 }
