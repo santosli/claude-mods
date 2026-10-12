@@ -97,7 +97,9 @@ export const register: Register = on => {
     if (e.surface !== 'terminal') {
       const { Box, Text, Svg } = $.ui.resolve(e)
       // Each group's width in columns, so a narrow band drops the right-most first.
-      const groups: { key: string; color: string; cells: number; draw: () => JSX.Element }[] = [
+      // A group may offer a shorter form, tried before it is dropped.
+      type Group = { key: string; color: string; cells: number; draw: () => JSX.Element; compact?: Group }
+      const groups: Group[] = [
         {
           key: 'context',
           color: lv.hex,
@@ -156,6 +158,17 @@ export const register: Register = on => {
               <Text dimColor>{`today · ${short(spent.tokens)} tokens`}</Text>
             </Box>
           ),
+          compact: {
+            key: 'today',
+            color: '#8a8a8a',
+            cells: fit(0, money(spent.usd), `today · ${short(spent.tokens)}`),
+            draw: () => (
+              <Box key="today" flexDirection="row" alignItems="center" gap={1}>
+                <Text bold>{money(spent.usd)}</Text>
+                <Text dimColor>{`today · ${short(spent.tokens)}`}</Text>
+              </Box>
+            ),
+          },
         })
       }
       if (SHOW_TURNS && history.length > 1) {
@@ -175,12 +188,17 @@ export const register: Register = on => {
       // don't fit leave a dot each, a column apart, so the band never wraps.
       const rule = 2 + width('│')
       const dots = (n: number) => (n ? 1 + n * width('•') + (n - 1) : 0)
-      const need = (k: number) =>
-        groups.slice(0, k).reduce((n, g) => n + g.cells, 0) + (k - 1) * rule + dots(groups.length - k)
-      let count = groups.length
-      while (count > 1 && need(count) > columns - INSET - MARGIN) count--
-      const shown = groups.slice(0, count)
-      const hidden = groups.slice(count)
+      const need = (row: Group[]) =>
+        row.reduce((n, g) => n + g.cells, 0) + (row.length - 1) * rule + dots(groups.length - row.length)
+      // From the whole band down to its first group, the last one shown in its shorter form first.
+      const rows = groups.flatMap((_, i) => {
+        const k = groups.length - i
+        const last = groups[k - 1]!
+        const row = groups.slice(0, k)
+        return last.compact ? [row, [...row.slice(0, -1), last.compact]] : [row]
+      })
+      const shown = rows.find(row => need(row) <= columns - INSET - MARGIN) ?? rows.at(-1)!
+      const hidden = groups.slice(shown.length)
 
       return (
         <Box flexDirection="row" alignItems="center" paddingX={1} gap={1}>

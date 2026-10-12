@@ -171,8 +171,12 @@ describe('token-bar', () => {
     expect(await full.find({ type: 'Text', text: '•' })).toBeUndefined()
     await full.unmount()
   })
-  test("a full-width desktop band keeps today's spend beside three groups", async ($, on) => {
-    // The band as it was drawn when 2.3.1 still hid today's spend there.
+  test("a full-width desktop band keeps today's spend, shorter when it must", async ($, on) => {
+    // Two bands as the desktop drew them, which 2.3.1 and 2.3.2 hid today's spend in.
+    let session = { used: 9, minutes: 211 }
+    let weekly = { used: 53, hours: 44 }
+    let context = 19
+    let today = { tokens: 125_587_669, usd: 41.5714 }
     on('clock.now', () => ({ value: T0 }))
     mock.store(on)
     on('session.start', ($, e) => ({ cwd: e.cwd }))
@@ -180,10 +184,10 @@ describe('token-bar', () => {
       value: {
         startedAt: 0,
         rateLimits: [
-          { kind: 'five_hour', percentUsed: 9, resetsAt: new Date(T0 + 211 * 60_000).toISOString() },
-          { kind: 'seven_day', percentUsed: 53, resetsAt: new Date(T0 + 44 * 3_600_000).toISOString() },
+          { kind: 'five_hour', percentUsed: session.used, resetsAt: new Date(T0 + session.minutes * 60_000).toISOString() },
+          { kind: 'seven_day', percentUsed: weekly.used, resetsAt: new Date(T0 + weekly.hours * 3_600_000).toISOString() },
         ],
-        context: { tokens: 190_000, window: 1_000_000, percent: 19 },
+        context: { tokens: context * 10_000, window: 1_000_000, percent: context },
       },
     }))
     on('turn.complete', () => ({ text: '' }))
@@ -191,7 +195,7 @@ describe('token-bar', () => {
     on('process.run', () => {
       const d = new Date(T0)
       const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      const stdout = JSON.stringify({ day, tokens: 125_587_669, usd: 41.5714, unpriced: {} })
+      const stdout = JSON.stringify({ day, ...today, unpriced: {} })
       return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     })
     await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' } as any)
@@ -203,6 +207,20 @@ describe('token-bar', () => {
     expect(await ui.find({ type: 'Text', text: 'today · 125.6M tokens' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '•' })).toBeUndefined()
     await ui.unmount()
+
+    // Measured there: all four in full take 91.4 of the 91.8 columns drawn, too close to call;
+    // today's spend drops the word "tokens" rather than its place.
+    session = { used: 58, minutes: 193 }
+    weekly = { used: 59, hours: 43 }
+    context = 24
+    today = { tokens: 143_509_720, usd: 47.9295 }
+    await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1 } as any)
+    const tight = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 95 } } as any)
+    expect(await tight.find({ type: 'Text', text: '↻ 1d 19h' })).toBeDefined()
+    expect(await tight.find({ type: 'Text', text: '$47.93' })).toBeDefined()
+    expect(await tight.find({ type: 'Text', text: 'today · 143.5M' })).toBeDefined()
+    expect(await tight.find({ type: 'Text', text: '•' })).toBeUndefined()
+    await tight.unmount()
   })
   test("today's tokens and cost come from the transcript scan, and a failed scan leaves the band", async ($, on) => {
     const runs: string[][] = []
