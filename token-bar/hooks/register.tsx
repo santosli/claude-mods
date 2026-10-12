@@ -178,7 +178,7 @@ export const register: Register = on => {
       const need = (k: number) =>
         groups.slice(0, k).reduce((n, g) => n + g.cells, 0) + (k - 1) * rule + dots(groups.length - k)
       let count = groups.length
-      while (count > 1 && need(count) > columns - 2 - MARGIN) count--
+      while (count > 1 && need(count) > columns - INSET - MARGIN) count--
       const shown = groups.slice(0, count)
       const hidden = groups.slice(count)
 
@@ -225,27 +225,29 @@ export const register: Register = on => {
 }
 
 // The desktop's band is 13px system text, and a column there is 8px. Each character's width in
-// columns, measured in Chromium and rounded up; anything not listed counts as wide.
+// columns, measured in Chromium and rounded up, then checked against the desktop itself, where
+// `↻` is narrower; anything not listed counts as wide.
 const CHARS: Record<string, number> = {
   '0': 1.02, '1': 0.75, '2': 0.98, '3': 1.01, '4': 1.04, '5': 1, '6': 1.03, '7': 0.92, '8': 1.03, '9': 1.03,
   a: 0.89, b: 0.99, c: 0.9, d: 0.99, e: 0.92, f: 0.58, g: 0.99, h: 0.95, i: 0.4, j: 0.4, k: 0.88, l: 0.41, m: 1.41,
   n: 0.94, o: 0.96, p: 0.99, q: 0.99, r: 0.61, s: 0.85, t: 0.59, u: 0.94, v: 0.88, w: 1.25, x: 0.85, y: 0.88, z: 0.87,
-  ' ': 0.45, '.': 0.48, $: 1.02, '%': 1.5, M: 1.42, '↻': 1.32, '·': 0.48, '•': 0.76, '│': 0.42,
+  ' ': 0.45, '.': 0.48, $: 1.02, '%': 1.5, M: 1.42, '↻': 1.17, '·': 0.48, '•': 0.76, '│': 0.42,
 }
-// Bold figures run about 7% wider. The rings are 18px.
-const BOLD = 1.07
+// The rings are 18px. The desktop's bold figures are no wider than the table's.
 const RING = 18 / 8
-// Half a column to spare for rounding in the desktop's layout.
+// The band draws about three columns short of the width the desktop reports for it, with its
+// padding (measured: 95 reported, 91.8 drawn). Half a column more to spare.
+const INSET = 3
 const MARGIN = 0.5
 
 function width(text: string) {
   return [...text].reduce((n, c) => n + (CHARS[c] ?? 1.6), 0)
 }
 
-// A group's width in columns: its icon's, its bold figure's, its texts' and a column between each.
+// A group's width in columns: its icon's, its figure's, its texts' and a column between each.
 function fit(icon: number, figure: string, ...texts: string[]) {
   const parts = texts.filter(Boolean)
-  return icon + width(figure) * BOLD + parts.reduce((n, t) => n + width(t), 0) + parts.length + (icon ? 1 : 0)
+  return icon + width(figure) + parts.reduce((n, t) => n + width(t), 0) + parts.length + (icon ? 1 : 0)
 }
 
 async function takeReading($: EngineInterface) {
