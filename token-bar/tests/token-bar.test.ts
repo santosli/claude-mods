@@ -171,7 +171,7 @@ describe('token-bar', () => {
     expect(await full.find({ type: 'Text', text: '•' })).toBeUndefined()
     await full.unmount()
   })
-  test("a full-width desktop band keeps today's spend, shorter when it must", async ($, on) => {
+  test("a desktop band keeps today's spend, shorter when it must", async ($, on) => {
     // Two bands as the desktop drew them, which 2.3.1 and 2.3.2 hid today's spend in.
     let session = { used: 9, minutes: 211 }
     let weekly = { used: 53, hours: 44 }
@@ -221,6 +221,20 @@ describe('token-bar', () => {
     expect(await tight.find({ type: 'Text', text: 'today · 143.5M' })).toBeDefined()
     expect(await tight.find({ type: 'Text', text: '•' })).toBeUndefined()
     await tight.unmount()
+
+    // A narrower band, as the desktop drew it, that can't hold even that: the spend keeps its place
+    // with only the word "today".
+    session = { used: 25, minutes: 149 }
+    weekly = { used: 59, hours: 63 }
+    context = 55
+    today = { tokens: 35_488_649, usd: 12.4447 }
+    await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1 } as any)
+    const narrower = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 88 } } as any)
+    expect(await narrower.find({ type: 'Text', text: '↻ 2d 15h' })).toBeDefined()
+    expect(await narrower.find({ type: 'Text', text: '$12.44' })).toBeDefined()
+    expect(await narrower.find({ type: 'Text', text: 'today' })).toBeDefined()
+    expect(await narrower.find({ type: 'Text', text: '•' })).toBeUndefined()
+    await narrower.unmount()
   })
   test("today's tokens and cost come from the transcript scan, and a failed scan leaves the band", async ($, on) => {
     const runs: string[][] = []

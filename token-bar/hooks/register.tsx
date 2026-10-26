@@ -168,6 +168,17 @@ export const register: Register = on => {
                 <Text dimColor>{`today · ${short(spent.tokens)}`}</Text>
               </Box>
             ),
+            compact: {
+              key: 'today',
+              color: '#8a8a8a',
+              cells: fit(0, money(spent.usd), 'today'),
+              draw: () => (
+                <Box key="today" flexDirection="row" alignItems="center" gap={1}>
+                  <Text bold>{money(spent.usd)}</Text>
+                  <Text dimColor>today</Text>
+                </Box>
+              ),
+            },
           },
         })
       }
@@ -190,12 +201,13 @@ export const register: Register = on => {
       const dots = (n: number) => (n ? 1 + n * width('•') + (n - 1) : 0)
       const need = (row: Group[]) =>
         row.reduce((n, g) => n + g.cells, 0) + (row.length - 1) * rule + dots(groups.length - row.length)
-      // From the whole band down to its first group, the last one shown in its shorter form first.
+      // From the whole band down to its first group, the last one shown in each shorter form first.
       const rows = groups.flatMap((_, i) => {
         const k = groups.length - i
-        const last = groups[k - 1]!
-        const row = groups.slice(0, k)
-        return last.compact ? [row, [...row.slice(0, -1), last.compact]] : [row]
+        const row = groups.slice(0, k - 1)
+        const forms: Group[][] = []
+        for (let g: Group | undefined = groups[k - 1]; g; g = g.compact) forms.push([...row, g])
+        return forms
       })
       const shown = rows.find(row => need(row) <= columns - INSET - MARGIN) ?? rows.at(-1)!
       const hidden = groups.slice(shown.length)
