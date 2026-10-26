@@ -107,8 +107,10 @@ export const register: Register = on => {
           draw: () => (
             <Box key="context" flexDirection="row" alignItems="center" gap={1}>
               <Svg source={ring(last.percent, lv.hex)} alt={`${last.percent}% of context used`} width={18} height={18} />
-              <Text color={lv.hex} bold>{`${last.percent}%`}</Text>
-              <Text dimColor>of context</Text>
+              <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
+                <Text color={lv.hex} bold>{`${last.percent}%`}</Text>
+                <Text dimColor>of context</Text>
+              </Box>
             </Box>
           ),
         },
@@ -123,8 +125,10 @@ export const register: Register = on => {
           draw: () => (
             <Box key="five-hour" flexDirection="row" alignItems="center" gap={1}>
               <Svg source={ring(qUsed, q.hex)} alt={`${qUsed}% of session used`} width={18} height={18} />
-              <Text color={q.hex} bold>{`${qUsed}%`}</Text>
-              <Text dimColor>of session</Text>
+              <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
+                <Text color={q.hex} bold>{`${qUsed}%`}</Text>
+                <Text dimColor>of session</Text>
+              </Box>
               {fiveHour.resetsAt && <Text dimColor>{`↻ ${countdown(fiveHour.resetsAt, at)}`}</Text>}
             </Box>
           ),
@@ -140,8 +144,10 @@ export const register: Register = on => {
           draw: () => (
             <Box key="seven-day" flexDirection="row" alignItems="center" gap={1}>
               <Svg source={week(qUsed, q.hex)} alt={`${qUsed}% of weekly used`} width={18} height={18} />
-              <Text color={q.hex} bold>{`${qUsed}%`}</Text>
-              <Text dimColor>of weekly</Text>
+              <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
+                <Text color={q.hex} bold>{`${qUsed}%`}</Text>
+                <Text dimColor>of weekly</Text>
+              </Box>
               {sevenDay.resetsAt && <Text dimColor>{`↻ ${countdown(sevenDay.resetsAt, at)}`}</Text>}
             </Box>
           ),
@@ -154,8 +160,10 @@ export const register: Register = on => {
           cells: fit(0, money(spent.usd), `today · ${short(spent.tokens)} tokens`),
           draw: () => (
             <Box key="today" flexDirection="row" alignItems="center" gap={1}>
-              <Text bold>{money(spent.usd)}</Text>
-              <Text dimColor>{`today · ${short(spent.tokens)} tokens`}</Text>
+              <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
+                <Text bold>{money(spent.usd)}</Text>
+                <Text dimColor>{`today · ${short(spent.tokens)} tokens`}</Text>
+              </Box>
             </Box>
           ),
           compact: {
@@ -164,8 +172,10 @@ export const register: Register = on => {
             cells: fit(0, money(spent.usd), `today · ${short(spent.tokens)}`),
             draw: () => (
               <Box key="today" flexDirection="row" alignItems="center" gap={1}>
-                <Text bold>{money(spent.usd)}</Text>
-                <Text dimColor>{`today · ${short(spent.tokens)}`}</Text>
+                <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
+                  <Text bold>{money(spent.usd)}</Text>
+                  <Text dimColor>{`today · ${short(spent.tokens)}`}</Text>
+                </Box>
               </Box>
             ),
             compact: {
@@ -174,8 +184,10 @@ export const register: Register = on => {
               cells: fit(0, money(spent.usd), 'today'),
               draw: () => (
                 <Box key="today" flexDirection="row" alignItems="center" gap={1}>
-                  <Text bold>{money(spent.usd)}</Text>
-                  <Text dimColor>today</Text>
+                  <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
+                    <Text bold>{money(spent.usd)}</Text>
+                    <Text dimColor>today</Text>
+                  </Box>
                 </Box>
               ),
             },
@@ -274,10 +286,14 @@ function width(text: string) {
   return [...text].reduce((n, c) => n + (CHARS[c] ?? 1.6), 0)
 }
 
-// A group's width in columns: its icon's, its figure's, its texts' and a column between each.
+// A figure sits closer to its label than the group's other parts sit to each other.
+const FIGURE_GAP = 0.5
+
+// A group's width in columns: its icon's, its figure's, its texts' and the space between each.
 function fit(icon: number, figure: string, ...texts: string[]) {
   const parts = texts.filter(Boolean)
-  return icon + width(figure) + parts.reduce((n, t) => n + width(t), 0) + parts.length + (icon ? 1 : 0)
+  const gaps = parts.length ? FIGURE_GAP + parts.length - 1 : 0
+  return icon + width(figure) + parts.reduce((n, t) => n + width(t), 0) + gaps + (icon ? 1 : 0)
 }
 
 async function takeReading($: EngineInterface) {

@@ -152,8 +152,9 @@ describe('token-bar', () => {
     await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' } as any)
     await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1 } as any)
 
-    // Measured in the desktop: three groups and a dot for today take 70.5 columns, so 70 can't hold them.
-    const narrow = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 70 } } as any)
+    // Measured in the desktop: three groups and a dot for today take 70.5 columns, 69 with each
+    // figure half a column from its label, so 68 can't hold them.
+    const narrow = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 68 } } as any)
     expect(await narrow.find({ type: 'Text', text: /^85%$/ })).toBeDefined()
     expect(await narrow.find({ type: 'Text', text: /^28%$/ })).toBeUndefined()
     expect(await narrow.find({ type: 'Text', text: '•' })).toBeDefined()
