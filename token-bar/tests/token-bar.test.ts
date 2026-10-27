@@ -236,6 +236,19 @@ describe('token-bar', () => {
     expect(await narrower.find({ type: 'Text', text: 'today' })).toBeDefined()
     expect(await narrower.find({ type: 'Text', text: '•' })).toBeUndefined()
     await narrower.unmount()
+
+    // The desktop reported 85 columns for a band whose four groups, with the tokens, draw in about
+    // 80 of the 83.6 it holds: the tokens stay.
+    session = { used: 18, minutes: 151 }
+    weekly = { used: 65, hours: 32 }
+    context = 34
+    today = { tokens: 16_400_000, usd: 7.39 }
+    await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1 } as any)
+    const reported = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 85 } } as any)
+    expect(await reported.find({ type: 'Text', text: '↻ 1d 8h' })).toBeDefined()
+    expect(await reported.find({ type: 'Text', text: 'today · 16.4M' })).toBeDefined()
+    expect(await reported.find({ type: 'Text', text: '•' })).toBeUndefined()
+    await reported.unmount()
   })
   test("today's tokens and cost come from the transcript scan, and a failed scan leaves the band", async ($, on) => {
     const runs: string[][] = []

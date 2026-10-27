@@ -212,7 +212,7 @@ export const register: Register = on => {
       const rule = 2 + width('│')
       const dots = (n: number) => (n ? 1 + n * width('•') + (n - 1) : 0)
       const need = (row: Group[]) =>
-        row.reduce((n, g) => n + g.cells, 0) + (row.length - 1) * rule + dots(groups.length - row.length)
+        DRAWN * (row.reduce((n, g) => n + g.cells, 0) + (row.length - 1) * rule + dots(groups.length - row.length))
       // From the whole band down to its first group, the last one shown in each shorter form first.
       const rows = groups.flatMap((_, i) => {
         const k = groups.length - i
@@ -281,6 +281,9 @@ const RING = 18 / 8
 // padding (measured: 95 reported, 91.8 drawn). Half a column more to spare.
 const INSET = 3
 const MARGIN = 0.5
+// The table's widths, rounded up, sum to more than the desktop draws: a band of four groups the
+// table counted at 75.9 columns drew in 73.9.
+const DRAWN = 0.975
 
 function width(text: string) {
   return [...text].reduce((n, c) => n + (CHARS[c] ?? 1.6), 0)
