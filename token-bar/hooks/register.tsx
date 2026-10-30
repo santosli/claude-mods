@@ -7,6 +7,7 @@ import { bars, barsWidth, ring, week } from './draw'
 import { SCAN_SCRIPT, SCAN_STATE, scanRoots } from './scan'
 
 const HISTORY = 12
+const LOG_LINES = 200
 const TICK_MS = 30_000
 const BARS = '▁▂▃▄▅▆▇█'
 // Colored by how much is used, as a phone's battery is: green, then yellow, then red.
@@ -31,6 +32,7 @@ const today = atom({ plugin: 'token-bar', key: 'today' } as const, null as Token
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
+    await note($, `session started on ${e.surface}`)
     // The quota is the account's: show the last one known until a response reports it again.
     const stored = await $.store.get('limits').catch(() => undefined)
     if (Array.isArray(stored)) await saveLimits($, stored as TokenBarLimit[])
@@ -80,190 +82,222 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const history = await read($, readings)
-    const last = history.at(-1)
-    if (e.props.hasSurvey || !last) {
-      return next(e)
-    }
-
-    const quota = await read($, limits)
-    const at = await read($, now)
-    const lv = level(last.percent)
-    const fiveHour = quota.find(l => l.kind === 'five_hour')
-    const sevenDay = quota.find(l => l.kind === 'seven_day')
-    const columns = e.props.bodyColumns
-    const spent = await read($, today)
-
-    if (e.surface !== 'terminal') {
-      const { Box, Text, Svg } = $.ui.resolve(e)
-      // Each group's width in columns, so a narrow band drops the right-most first.
-      // A group may offer a shorter form, tried before it is dropped.
-      type Group = { key: string; color: string; cells: number; draw: () => JSX.Element; compact?: Group }
-      const groups: Group[] = [
-        {
-          key: 'context',
-          color: lv.hex,
-          cells: fit(RING, `${last.percent}%`, 'of context'),
-          draw: () => (
-            <Box key="context" flexDirection="row" alignItems="center" gap={1}>
-              <Svg source={ring(last.percent, lv.hex)} alt={`${last.percent}% of context used`} width={18} height={18} />
-              <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
-                <Text color={lv.hex} bold>{`${last.percent}%`}</Text>
-                <Text dimColor>of context</Text>
-              </Box>
-            </Box>
-          ),
-        },
-      ]
-      if (fiveHour) {
-        const q = level(fiveHour.percentUsed)
-        const qUsed = used(fiveHour.percentUsed)
-        groups.push({
-          key: 'five-hour',
-          color: q.hex,
-          cells: fit(RING, `${qUsed}%`, 'of session', fiveHour.resetsAt ? `↻ ${countdown(fiveHour.resetsAt, at)}` : ''),
-          draw: () => (
-            <Box key="five-hour" flexDirection="row" alignItems="center" gap={1}>
-              <Svg source={ring(qUsed, q.hex)} alt={`${qUsed}% of session used`} width={18} height={18} />
-              <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
-                <Text color={q.hex} bold>{`${qUsed}%`}</Text>
-                <Text dimColor>of session</Text>
-              </Box>
-              {fiveHour.resetsAt && <Text dimColor>{`↻ ${countdown(fiveHour.resetsAt, at)}`}</Text>}
-            </Box>
-          ),
-        })
+    try {
+      const history = await read($, readings)
+      const last = history.at(-1)
+      if (e.props.hasSurvey || !last) {
+        await seen($, `drew nothing: ${e.props.hasSurvey ? 'a survey holds the band' : 'no reading of the context yet'}`)
+        return next(e)
       }
-      if (sevenDay) {
-        const q = level(sevenDay.percentUsed)
-        const qUsed = used(sevenDay.percentUsed)
-        groups.push({
-          key: 'seven-day',
-          color: q.hex,
-          cells: fit(RING, `${qUsed}%`, 'of weekly', sevenDay.resetsAt ? `↻ ${countdown(sevenDay.resetsAt, at)}` : ''),
-          draw: () => (
-            <Box key="seven-day" flexDirection="row" alignItems="center" gap={1}>
-              <Svg source={week(qUsed, q.hex)} alt={`${qUsed}% of weekly used`} width={18} height={18} />
-              <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
-                <Text color={q.hex} bold>{`${qUsed}%`}</Text>
-                <Text dimColor>of weekly</Text>
+      await seen($, 'drew the band')
+
+      const quota = await read($, limits)
+      const at = await read($, now)
+      const lv = level(last.percent)
+      const fiveHour = quota.find(l => l.kind === 'five_hour')
+      const sevenDay = quota.find(l => l.kind === 'seven_day')
+      const columns = e.props.bodyColumns
+      const spent = await read($, today)
+
+      if (e.surface !== 'terminal') {
+        const { Box, Text, Svg } = $.ui.resolve(e)
+        // Each group's width in columns, so a narrow band drops the right-most first.
+        // A group may offer a shorter form, tried before it is dropped.
+        type Group = { key: string; color: string; cells: number; draw: () => JSX.Element; compact?: Group }
+        const groups: Group[] = [
+          {
+            key: 'context',
+            color: lv.hex,
+            cells: fit(RING, `${last.percent}%`, 'of context'),
+            draw: () => (
+              <Box key="context" flexDirection="row" alignItems="center" gap={1}>
+                <Svg source={ring(last.percent, lv.hex)} alt={`${last.percent}% of context used`} width={18} height={18} />
+                <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
+                  <Text color={lv.hex} bold>{`${last.percent}%`}</Text>
+                  <Text dimColor>of context</Text>
+                </Box>
               </Box>
-              {sevenDay.resetsAt && <Text dimColor>{`↻ ${countdown(sevenDay.resetsAt, at)}`}</Text>}
-            </Box>
-          ),
-        })
-      }
-      if (spent) {
-        groups.push({
-          key: 'today',
-          color: '#8a8a8a',
-          cells: fit(0, money(spent.usd), `today · ${short(spent.tokens)} tokens`),
-          draw: () => (
-            <Box key="today" flexDirection="row" alignItems="center" gap={1}>
-              <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
-                <Text bold>{money(spent.usd)}</Text>
-                <Text dimColor>{`today · ${short(spent.tokens)} tokens`}</Text>
+            ),
+          },
+        ]
+        if (fiveHour) {
+          const q = level(fiveHour.percentUsed)
+          const qUsed = used(fiveHour.percentUsed)
+          groups.push({
+            key: 'five-hour',
+            color: q.hex,
+            cells: fit(RING, `${qUsed}%`, 'of session', fiveHour.resetsAt ? `↻ ${countdown(fiveHour.resetsAt, at)}` : ''),
+            draw: () => (
+              <Box key="five-hour" flexDirection="row" alignItems="center" gap={1}>
+                <Svg source={ring(qUsed, q.hex)} alt={`${qUsed}% of session used`} width={18} height={18} />
+                <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
+                  <Text color={q.hex} bold>{`${qUsed}%`}</Text>
+                  <Text dimColor>of session</Text>
+                </Box>
+                {fiveHour.resetsAt && <Text dimColor>{`↻ ${countdown(fiveHour.resetsAt, at)}`}</Text>}
               </Box>
-            </Box>
-          ),
-          compact: {
+            ),
+          })
+        }
+        if (sevenDay) {
+          const q = level(sevenDay.percentUsed)
+          const qUsed = used(sevenDay.percentUsed)
+          groups.push({
+            key: 'seven-day',
+            color: q.hex,
+            cells: fit(RING, `${qUsed}%`, 'of weekly', sevenDay.resetsAt ? `↻ ${countdown(sevenDay.resetsAt, at)}` : ''),
+            draw: () => (
+              <Box key="seven-day" flexDirection="row" alignItems="center" gap={1}>
+                <Svg source={week(qUsed, q.hex)} alt={`${qUsed}% of weekly used`} width={18} height={18} />
+                <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
+                  <Text color={q.hex} bold>{`${qUsed}%`}</Text>
+                  <Text dimColor>of weekly</Text>
+                </Box>
+                {sevenDay.resetsAt && <Text dimColor>{`↻ ${countdown(sevenDay.resetsAt, at)}`}</Text>}
+              </Box>
+            ),
+          })
+        }
+        if (spent) {
+          groups.push({
             key: 'today',
             color: '#8a8a8a',
-            cells: fit(0, money(spent.usd), `today · ${short(spent.tokens)}`),
+            cells: fit(0, money(spent.usd), `today · ${short(spent.tokens)} tokens`),
             draw: () => (
               <Box key="today" flexDirection="row" alignItems="center" gap={1}>
                 <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
                   <Text bold>{money(spent.usd)}</Text>
-                  <Text dimColor>{`today · ${short(spent.tokens)}`}</Text>
+                  <Text dimColor>{`today · ${short(spent.tokens)} tokens`}</Text>
                 </Box>
               </Box>
             ),
             compact: {
               key: 'today',
               color: '#8a8a8a',
-              cells: fit(0, money(spent.usd), 'today'),
+              cells: fit(0, money(spent.usd), `today · ${short(spent.tokens)}`),
               draw: () => (
                 <Box key="today" flexDirection="row" alignItems="center" gap={1}>
                   <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
                     <Text bold>{money(spent.usd)}</Text>
-                    <Text dimColor>today</Text>
+                    <Text dimColor>{`today · ${short(spent.tokens)}`}</Text>
                   </Box>
                 </Box>
               ),
+              compact: {
+                key: 'today',
+                color: '#8a8a8a',
+                cells: fit(0, money(spent.usd), 'today'),
+                draw: () => (
+                  <Box key="today" flexDirection="row" alignItems="center" gap={1}>
+                    <Box flexDirection="row" alignItems="center" gap={FIGURE_GAP}>
+                      <Text bold>{money(spent.usd)}</Text>
+                      <Text dimColor>today</Text>
+                    </Box>
+                  </Box>
+                ),
+              },
             },
-          },
+          })
+        }
+        if (SHOW_TURNS && history.length > 1) {
+          groups.push({
+            key: 'trend',
+            color: lv.hex,
+            cells: 22,
+            draw: () => (
+              <Box key="trend" flexDirection="row" alignItems="center" gap={1}>
+                <Svg source={bars(history.map(r => r.tokens), lv.hex)} alt={`Context after each of the last ${history.length} turns`} width={barsWidth(history.length)} height={14} />
+                <Text dimColor>{trend(history).trim()}</Text>
+              </Box>
+            ),
+          })
+        }
+        // Groups sit a rule apart: a column of space, the rule, and a column again. Those that
+        // don't fit leave a dot each, a column apart, so the band never wraps.
+        const rule = 2 + width('│')
+        const dots = (n: number) => (n ? 1 + n * width('•') + (n - 1) : 0)
+        const need = (row: Group[]) =>
+          DRAWN * (row.reduce((n, g) => n + g.cells, 0) + (row.length - 1) * rule + dots(groups.length - row.length))
+        // From the whole band down to its first group, the last one shown in each shorter form first.
+        const rows = groups.flatMap((_, i) => {
+          const k = groups.length - i
+          const row = groups.slice(0, k - 1)
+          const forms: Group[][] = []
+          for (let g: Group | undefined = groups[k - 1]; g; g = g.compact) forms.push([...row, g])
+          return forms
         })
+        const shown = rows.find(row => need(row) <= columns - INSET - MARGIN) ?? rows.at(-1)!
+        const hidden = groups.slice(shown.length)
+
+        return (
+          <Box flexDirection="row" alignItems="center" paddingX={1} gap={1}>
+            {shown.flatMap((g, i) => [
+              ...(i > 0 ? [<Text key={`rule-${g.key}`} color={RULE}>│</Text>] : []),
+              g.draw(),
+            ])}
+            {hidden.length > 0 && (
+              <Box key="hidden" flexDirection="row" gap={1}>
+                {hidden.map(g => (
+                  <Text key={g.key} color={g.color}>•</Text>
+                ))}
+              </Box>
+            )}
+          </Box>
+        )
       }
-      if (SHOW_TURNS && history.length > 1) {
-        groups.push({
-          key: 'trend',
-          color: lv.hex,
-          cells: 22,
-          draw: () => (
-            <Box key="trend" flexDirection="row" alignItems="center" gap={1}>
-              <Svg source={bars(history.map(r => r.tokens), lv.hex)} alt={`Context after each of the last ${history.length} turns`} width={barsWidth(history.length)} height={14} />
-              <Text dimColor>{trend(history).trim()}</Text>
-            </Box>
-          ),
-        })
-      }
-      // Groups sit a rule apart: a column of space, the rule, and a column again. Those that
-      // don't fit leave a dot each, a column apart, so the band never wraps.
-      const rule = 2 + width('│')
-      const dots = (n: number) => (n ? 1 + n * width('•') + (n - 1) : 0)
-      const need = (row: Group[]) =>
-        DRAWN * (row.reduce((n, g) => n + g.cells, 0) + (row.length - 1) * rule + dots(groups.length - row.length))
-      // From the whole band down to its first group, the last one shown in each shorter form first.
-      const rows = groups.flatMap((_, i) => {
-        const k = groups.length - i
-        const row = groups.slice(0, k - 1)
-        const forms: Group[][] = []
-        for (let g: Group | undefined = groups[k - 1]; g; g = g.compact) forms.push([...row, g])
-        return forms
-      })
-      const shown = rows.find(row => need(row) <= columns - INSET - MARGIN) ?? rows.at(-1)!
-      const hidden = groups.slice(shown.length)
+
+      const { Box, Text } = $.ui.resolve(e)
+      const q5 = fiveHour && level(fiveHour.percentUsed)
+      const q7 = sevenDay && level(sevenDay.percentUsed)
 
       return (
-        <Box flexDirection="row" alignItems="center" paddingX={1} gap={1}>
-          {shown.flatMap((g, i) => [
-            ...(i > 0 ? [<Text key={`rule-${g.key}`} color={RULE}>│</Text>] : []),
-            g.draw(),
-          ])}
-          {hidden.length > 0 && (
-            <Box key="hidden" flexDirection="row" gap={1}>
-              {hidden.map(g => (
-                <Text key={g.key} color={g.color}>•</Text>
-              ))}
-            </Box>
-          )}
+        <Box flexDirection="row" paddingX={1}>
+          <Text color={lv.color}>{gauge(last.percent)}</Text>
+          <Text color={lv.color} bold>{` ${last.percent}%`}</Text>
+          <Text dimColor>{' of context'}</Text>
+          {columns >= 80 && fiveHour && <Text color={q5!.color} bold>{`   ${used(fiveHour.percentUsed)}%`}</Text>}
+          {columns >= 80 && fiveHour && <Text dimColor>{' of session'}</Text>}
+          {columns >= 80 && fiveHour?.resetsAt && <Text dimColor>{` ↻ ${countdown(fiveHour.resetsAt, at)}`}</Text>}
+          {columns >= 80 && sevenDay && <Text color={q7!.color} bold>{`   ${used(sevenDay.percentUsed)}%`}</Text>}
+          {columns >= 80 && sevenDay && <Text dimColor>{' of weekly'}</Text>}
+          {columns >= 80 && sevenDay?.resetsAt && <Text dimColor>{` ↻ ${countdown(sevenDay.resetsAt, at)}`}</Text>}
+          {columns >= 110 && spent && <Text bold>{`   ${money(spent.usd)}`}</Text>}
+          {columns >= 110 && spent && <Text dimColor>{` today · ${short(spent.tokens)} tokens`}</Text>}
+          {SHOW_TURNS && columns >= 120 && <Text dimColor>{'   last turns '}</Text>}
+          {SHOW_TURNS && columns >= 120 && <Text color={lv.color}>{sparkline(history)}</Text>}
+          {SHOW_TURNS && columns >= 120 && history.length > 1 && <Text dimColor>{trend(history)}</Text>}
         </Box>
       )
+    } catch (error) {
+      // A drawing that throws is noted and passed on, rather than skipped by the engine unsaid.
+      await seen($, `drew nothing: the drawing threw ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`)
+      return next(e)
     }
-
-    const { Box, Text } = $.ui.resolve(e)
-    const q5 = fiveHour && level(fiveHour.percentUsed)
-    const q7 = sevenDay && level(sevenDay.percentUsed)
-
-    return (
-      <Box flexDirection="row" paddingX={1}>
-        <Text color={lv.color}>{gauge(last.percent)}</Text>
-        <Text color={lv.color} bold>{` ${last.percent}%`}</Text>
-        <Text dimColor>{' of context'}</Text>
-        {columns >= 80 && fiveHour && <Text color={q5!.color} bold>{`   ${used(fiveHour.percentUsed)}%`}</Text>}
-        {columns >= 80 && fiveHour && <Text dimColor>{' of session'}</Text>}
-        {columns >= 80 && fiveHour?.resetsAt && <Text dimColor>{` ↻ ${countdown(fiveHour.resetsAt, at)}`}</Text>}
-        {columns >= 80 && sevenDay && <Text color={q7!.color} bold>{`   ${used(sevenDay.percentUsed)}%`}</Text>}
-        {columns >= 80 && sevenDay && <Text dimColor>{' of weekly'}</Text>}
-        {columns >= 80 && sevenDay?.resetsAt && <Text dimColor>{` ↻ ${countdown(sevenDay.resetsAt, at)}`}</Text>}
-        {columns >= 110 && spent && <Text bold>{`   ${money(spent.usd)}`}</Text>}
-        {columns >= 110 && spent && <Text dimColor>{` today · ${short(spent.tokens)} tokens`}</Text>}
-        {SHOW_TURNS && columns >= 120 && <Text dimColor>{'   last turns '}</Text>}
-        {SHOW_TURNS && columns >= 120 && <Text color={lv.color}>{sparkline(history)}</Text>}
-        {SHOW_TURNS && columns >= 120 && history.length > 1 && <Text dimColor>{trend(history)}</Text>}
-      </Box>
-    )
   })
+}
+
+// Why the band last drew what it did, kept in ~/.token-bar/band.log, so a band that goes blank
+// can be told apart: a survey, no reading, or a drawing that failed. Only changes are written.
+let lastSeen = ''
+
+async function seen($: EngineInterface, state: string) {
+  if (state === lastSeen) return
+  lastSeen = state
+  await note($, state)
+}
+
+async function note($: EngineInterface, text: string) {
+  try {
+    const home = await $.env.get('HOME')
+    if (!home) return
+    const path = `${home}/.token-bar/band.log`
+    const at = new Date(await $.clock.now()).toISOString()
+    const kept = await $.fs.read(path).catch(() => '')
+    const lines = [...String(kept).split('\n').filter(Boolean), `${at} ${text}`].slice(-LOG_LINES)
+    await $.fs.write(path, `${lines.join('\n')}\n`)
+  } catch {
+    // The log is only a witness: never let it cost the band.
+  }
 }
 
 // The desktop's band is 13px system text, and a column there is 8px. Each character's width in
