@@ -10,6 +10,8 @@ declare module 'claude-code' {
       limits: TokenBarLimit[]
       now: number
       today: TokenBarToday | null
+      // Whether the backdrop was set this session, so the band can step aside for it.
+      backdrop: boolean
     }
   }
 }

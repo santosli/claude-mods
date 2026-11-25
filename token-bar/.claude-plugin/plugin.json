@@ -1,9 +1,22 @@
 {
   "name": "token-bar",
-  "version": "2.3.7",
-  "description": "How full the context window and the quota are, and what today cost, above the prompt.",
+  "version": "2.4.0",
+  "description": "How full the context window and the quota are, and what today cost, above the prompt or behind the conversation.",
   "author": {
     "name": "santos"
   },
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "display": {
+      "type": "string",
+      "title": "Where the figures show",
+      "description": "In the desktop and mobile apps: the band above the prompt, the window's backdrop, or both. The terminal always shows the band.",
+      "default": "band",
+      "options": [
+        "band",
+        "backdrop",
+        "both"
+      ]
+    }
+  }
 }

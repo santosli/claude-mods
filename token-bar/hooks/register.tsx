@@ -3,7 +3,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { TokenBarLimit, TokenBarReading, TokenBarToday } from '../types'
-import { bars, barsWidth, ring, week } from './draw'
+import { bars, barsWidth, panel, ring, week } from './draw'
+import type { PanelRow } from './draw'
 import { SCAN_SCRIPT, SCAN_STATE, scanRoots } from './scan'
 
 const HISTORY = 12
@@ -28,11 +29,28 @@ const limits = atom({ plugin: 'token-bar', key: 'limits' } as const, [] as Token
 // The clock the countdown is drawn against; ticked so the band redraws.
 const now = atom({ plugin: 'token-bar', key: 'now' } as const, 0)
 const today = atom({ plugin: 'token-bar', key: 'today' } as const, null as TokenBarToday | null)
+const backdrop = atom({ plugin: 'token-bar', key: 'backdrop' } as const, false)
+const SCENE = 'token-bar'
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  // Where the figures show in the desktop and mobile apps: the band above the prompt, the
+  // window's backdrop, or both. The terminal and the editor draw no backdrop: they keep the band.
+  const display = options.display === 'backdrop' || options.display === 'both' ? options.display : 'band'
+
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     await note($, `session started on ${e.surface}`)
+    if (display !== 'band') {
+      try {
+        // At session.start the desktop app has often not attached yet: the theme then stands for
+        // it with isDrawn false, and draws once it does. Only a refusal (a throw) leaves the band.
+        const set = await $.theme.set({ backdrop: { scene: SCENE } })
+        await update($, backdrop, () => true)
+        await note($, set.isDrawn ? 'took the backdrop' : `took the backdrop for a surface yet to attach (${set.reason})`)
+      } catch (error) {
+        await note($, `no backdrop: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
     // The quota is the account's: show the last one known until a response reports it again.
     const stored = await $.store.get('limits').catch(() => undefined)
     if (Array.isArray(stored)) await saveLimits($, stored as TokenBarLimit[])
@@ -81,22 +99,53 @@ export const register: Register = on => {
     return result
   })
 
+  // The same figures, large, drawn into the window's backdrop.
+  on('ui.render', { component: 'Backdrop' }, async ($, e, next) => {
+    if (e.props.plugin !== 'token-bar' || (e.surface !== 'desktop' && e.surface !== 'mobile')) return next(e)
+    const last = (await read($, readings)).at(-1)
+    const quota = await read($, limits)
+    const at = await read($, now)
+    const spent = await read($, today)
+    const rows: PanelRow[] = []
+    if (last) {
+      rows.push({ icon: 'ring', used: last.percent, color: level(last.percent).hex, figure: `${last.percent}%`, label: 'of context' })
+    }
+    for (const [kind, icon, label] of [['five_hour', 'ring', 'of session'], ['seven_day', 'week', 'of weekly']] as const) {
+      const limit = quota.find(l => l.kind === kind)
+      if (!limit) continue
+      const u = used(limit.percentUsed)
+      const reset = limit.resetsAt ? `  ·  ↻ ${countdown(limit.resetsAt, at)}` : ''
+      rows.push({ icon, used: u, color: level(limit.percentUsed).hex, figure: `${u}%`, label: `${label}${reset}` })
+    }
+    if (spent) rows.push({ icon: null, used: 0, color: '', figure: money(spent.usd), label: `today  ·  ${short(spent.tokens)} tokens` })
+    if (!rows.length) return next(e)
+    const { Svg } = $.ui.resolve(e)
+    const alt = rows.map(r => `${r.figure} ${r.label}`).join(', ')
+    return <Svg source={panel(rows)} alt={alt} />
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     try {
+      // With the backdrop showing the figures, the band steps aside on the apps that draw it.
+      if (display === 'backdrop' && (e.surface === 'desktop' || e.surface === 'mobile') && (await read($, backdrop))) {
+        await seen($, 'drew nothing: the backdrop shows the figures')
+        return next(e)
+      }
       const history = await read($, readings)
       const last = history.at(-1)
       if (e.props.hasSurvey || !last) {
         await seen($, `drew nothing: ${e.props.hasSurvey ? 'a survey holds the band' : 'no reading of the context yet'}`)
         return next(e)
       }
-      await seen($, 'drew the band')
+      const columns = e.props.bodyColumns
+      // The width goes in the log too: it is what decides which groups and forms are shown.
+      await seen($, `drew the band at ${columns} columns`)
 
       const quota = await read($, limits)
       const at = await read($, now)
       const lv = level(last.percent)
       const fiveHour = quota.find(l => l.kind === 'five_hour')
       const sevenDay = quota.find(l => l.kind === 'seven_day')
-      const columns = e.props.bodyColumns
       const spent = await read($, today)
 
       if (e.surface !== 'terminal') {
@@ -502,8 +551,12 @@ function trend(history: TokenBarReading[]) {
   return delta > 0 ? `  ▲ +${short(delta)} last turn` : `  ▼ ${short(-delta)} last turn`
 }
 
+// Three figures at most: 16.4M, 256M, 1.2B. A tenth of a hundred million is room the band lacks.
 function short(n: number) {
-  if (n >= 1_000_000) return `${+(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `${+(n / 1_000).toFixed(1)}k`
+  for (const [size, unit] of [[1e9, 'B'], [1e6, 'M'], [1e3, 'k']] as const) {
+    if (n < size) continue
+    const v = n / size
+    return `${+v.toFixed(v >= 100 ? 0 : 1)}${unit}`
+  }
   return String(n)
 }

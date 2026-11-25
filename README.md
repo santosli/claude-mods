@@ -49,6 +49,16 @@ Today's figure is read from Claude Code's local transcripts (`~/.claude/projects
 
 It is an **API-equivalent** figure: on a subscription you are not billed this amount. Models it has no price for count toward tokens but not cost. The scan reads only new bytes each time and keeps its offsets in `~/.token-bar/`. It runs through `osascript`, so **today's figure is macOS only**; elsewhere the rest of the band works as before.
 
+### Behind the conversation instead
+
+In the desktop and mobile apps the figures can sit in the window's backdrop, large, in a card at the top left, instead of the band above the prompt. Set the plugin's `display` option to `backdrop` (or `both` to keep the band too), in `/config` or in `~/.claude/settings.json`:
+
+```json
+"pluginConfigs": { "token-bar@santos-mods": { "options": { "display": "backdrop" } } }
+```
+
+The backdrop is the session's theme, so it replaces any other mod's theme. The terminal always shows the band.
+
 ### Install
 
 In Claude Code:
@@ -100,6 +110,14 @@ token-bar 在 Claude Code 输入框上方显示一行用量（[40 秒宣传片](
 ```
 
 然后新开一个会话（桌面端重启一下 app）。
+
+**放进背景**：在桌面端和手机端，可以把这些数字放进窗口背景，左上角一张卡片，不用输入框上方那一行。把插件的 `display` 选项设成 `backdrop`（`both` 则两处都显示），可以在 `/config` 里改，或写进 `~/.claude/settings.json`：
+
+```json
+"pluginConfigs": { "token-bar@santos-mods": { "options": { "display": "backdrop" } } }
+```
+
+背景就是会话的主题，会替换掉其他 mod 设的主题。终端里始终显示那一行。
 
 ## License
 

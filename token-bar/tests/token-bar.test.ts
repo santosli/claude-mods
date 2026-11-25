@@ -205,7 +205,7 @@ describe('token-bar', () => {
     const ui = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 95 } } as any)
     expect(await ui.find({ type: 'Text', text: '↻ 1d 20h' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '$41.57' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'today · 125.6M tokens' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'today · 126M tokens' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '•' })).toBeUndefined()
     await ui.unmount()
 
@@ -219,7 +219,7 @@ describe('token-bar', () => {
     const tight = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 95 } } as any)
     expect(await tight.find({ type: 'Text', text: '↻ 1d 19h' })).toBeDefined()
     expect(await tight.find({ type: 'Text', text: '$47.93' })).toBeDefined()
-    expect(await tight.find({ type: 'Text', text: 'today · 143.5M' })).toBeDefined()
+    expect(await tight.find({ type: 'Text', text: 'today · 144M' })).toBeDefined()
     expect(await tight.find({ type: 'Text', text: '•' })).toBeUndefined()
     await tight.unmount()
 
@@ -249,6 +249,19 @@ describe('token-bar', () => {
     expect(await reported.find({ type: 'Text', text: 'today · 16.4M' })).toBeDefined()
     expect(await reported.find({ type: 'Text', text: '•' })).toBeUndefined()
     await reported.unmount()
+
+    // A band the desktop drew with two columns to spare after "$136 today", hiding 256.3M:
+    // written as 256M, the tokens fit.
+    session = { used: 49, minutes: 118 }
+    weekly = { used: 15, hours: 8.97 }
+    context = 38
+    today = { tokens: 256_303_259, usd: 136.69 }
+    await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1 } as any)
+    const hundreds = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 85 } } as any)
+    expect(await hundreds.find({ type: 'Text', text: '↻ 1h 58m' })).toBeDefined()
+    expect(await hundreds.find({ type: 'Text', text: 'today · 256M' })).toBeDefined()
+    expect(await hundreds.find({ type: 'Text', text: '•' })).toBeUndefined()
+    await hundreds.unmount()
   })
   test("today's tokens and cost come from the transcript scan, and a failed scan leaves the band", async ($, on) => {
     const runs: string[][] = []
@@ -420,5 +433,84 @@ describe('token-bar', () => {
     expect(await ui.find({ type: 'Text', text: /^16%$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /of weekly/ })).toBeDefined()
     await ui.unmount()
+  })
+
+  test('the backdrop shows the figures large, and the band steps aside for it', { options: { display: 'backdrop' } }, async ($, on) => {
+    // The kit draws no theme, so the mod's note that an app took the backdrop is stood in for.
+    let drawn = false
+    on('state.get', { plugin: 'token-bar', key: 'backdrop' } as any, ($, e, next) => (drawn ? { value: { value: true, version: 1 } } : next(e)))
+    on('clock.now', () => ({ value: T0 }))
+    mock.store(on)
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    on('session.usage', () => ({
+      value: {
+        startedAt: 0,
+        rateLimits: [
+          { kind: 'five_hour', percentUsed: 49, resetsAt: new Date(T0 + 118 * 60_000).toISOString() },
+          { kind: 'seven_day', percentUsed: 15, resetsAt: new Date(T0 + 538 * 60_000).toISOString() },
+        ],
+        context: { tokens: 380_000, window: 1_000_000, percent: 38 },
+      },
+    }))
+    on('turn.complete', () => ({ text: '' }))
+    on('env.get', ($, e: any) => ({ value: e.name === 'CLAUDE_CONFIG_DIR' ? '/cfg' : undefined }))
+    on('process.run', () => {
+      const d = new Date(T0)
+      const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      const stdout = JSON.stringify({ day, tokens: 256_303_259, usd: 136.69, unpriced: {} })
+      return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+    })
+    await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' } as any)
+    await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1 } as any)
+
+    const back = await $.ui.mount({
+      plugin: 'token-bar',
+      surface: 'desktop',
+      component: 'Backdrop',
+      props: { scene: 'token-bar', plugin: 'token-bar', glass: { blur: 16, opacity: 0.6 } },
+    } as any)
+    const svg = await back.find({ type: 'Svg' })
+    expect(svg?.props.alt).toBe('38% of context, 49% of session  ·  ↻ 1h 58m, 15% of weekly  ·  ↻ 8h 58m, $137 today  ·  256M tokens')
+    expect(String(svg?.props.source)).toContain('256M tokens')
+    await back.unmount()
+
+    // Another mod's backdrop is left alone.
+    const other = await $.ui.mount({
+      plugin: 'token-bar',
+      surface: 'desktop',
+      component: 'Backdrop',
+      props: { scene: 'lagoon', plugin: 'someone-else', glass: false },
+    } as any)
+    expect(await other.find({ type: 'Svg' })).toBeUndefined()
+    await other.unmount()
+
+    // With an app drawing the backdrop, the desktop band steps aside; the terminal, which draws no
+    // backdrop, keeps it.
+    drawn = true
+    const band = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 120 } } as any)
+    expect(await band.find({ type: 'Text', text: /of context/ })).toBeUndefined()
+    await band.unmount()
+    const term = await $.ui.mount({ plugin: 'token-bar', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 140 } } as any)
+    expect(await term.find({ type: 'Text', text: / of context/ })).toBeDefined()
+    await term.unmount()
+  })
+
+  test('by default the band stays and no backdrop is taken', async ($, on) => {
+    let themes = 0
+    on('clock.now', () => ({ value: T0 }))
+    mock.store(on)
+    on('session.start', ($, e) => ({ cwd: e.cwd }))
+    on('theme.set', () => {
+      themes++
+      return { value: { isDrawn: true, requestId: 'r' } }
+    })
+    on('session.usage', () => ({ value: { startedAt: 0, rateLimits: [], context: { tokens: 50_000, window: 200_000, percent: 25 } } }))
+    on('turn.complete', () => ({ text: '' }))
+    await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' } as any)
+    await $.turn.complete({ reason: 'answer', answer: 'ok', durationMs: 1 } as any)
+    expect(themes).toBe(0)
+    const band = await $.ui.mount({ plugin: 'token-bar', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 120 } } as any)
+    expect(await band.find({ type: 'Text', text: /^25%$/ })).toBeDefined()
+    await band.unmount()
   })
 })
